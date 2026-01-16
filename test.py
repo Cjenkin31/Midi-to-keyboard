@@ -14,22 +14,31 @@ import ctypes
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("dark-blue")
 
-# Color Palette
-COLOR_BG = "#1a1a1a"
-COLOR_CARD = "#2b2b2b"
-COLOR_ACCENT = "#3B8ED0"    # Blue
-COLOR_SUCCESS = "#2CC985"   # Green
-COLOR_DANGER = "#E04F5F"    # Red
-COLOR_WARN = "#E5C07B"      # Yellow/Orange for Pause
+# --- Accessible Color Palette (High Contrast) ---
+COLOR_BG = "#121212"
+COLOR_CARD = "#1E1E1E"
+
+# Action Colors (Darkened for better white-text contrast)
+COLOR_PRIMARY = "#3A7EBF"   # Standard UI Blue
+COLOR_LIVE_GO = "#1a7f37"   # Deep Green (Success)
+COLOR_FILE_GO = "#106ba3"   # Deep Blue (Play File)
+COLOR_DANGER = "#c9302c"    # Deep Red (Stop)
+COLOR_WARN = "#e0a800"      # Amber/Gold (Pause)
+
+# Text Colors
 COLOR_TEXT_MAIN = "#FFFFFF"
-COLOR_TEXT_SUB = "#A0A0A0"
+COLOR_TEXT_SUB = "#B0B0B0"
+COLOR_TEXT_ON_WARN = "#121212" # Black text for yellow buttons
+
+# Disabled States
+COLOR_BTN_DISABLED_BG = "#3A3A3A"
+COLOR_BTN_DISABLED_TEXT = "#AAAAAA"
 
 DEFAULT_FILENAME = "default_keymap.json"
 user32 = ctypes.windll.user32
 
 # --- Windows API Helpers ---
 def get_open_windows():
-    """Returns a list of titles for visible windows."""
     titles = []
     def foreach_window(hwnd, lParam):
         length = user32.GetWindowTextLengthW(hwnd)
@@ -42,7 +51,7 @@ def get_open_windows():
 
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
     user32.EnumWindows(WNDENUMPROC(foreach_window), 0)
-    return sorted(list(set(titles))) # Unique and sorted
+    return sorted(list(set(titles)))
 
 def get_active_window_title():
     hWnd = user32.GetForegroundWindow()
@@ -107,7 +116,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         super().__init__()
 
         self.title("MIDI Keybind Pro")
-        self.geometry("500x750")
+        self.geometry("500x820")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -135,7 +144,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         # 1. Header
         self.build_header()
 
-        # 2. Status Bar (Prominent)
+        # 2. Status Bar
         self.build_status_card()
 
         # 3. Settings & Target
@@ -159,19 +168,17 @@ class MidiKeyTranslatorApp(ctk.CTk):
     def build_header(self):
         header = ctk.CTkFrame(self.main_container, fg_color="transparent")
         header.grid(row=0, column=0, pady=(20, 10), sticky="ew")
-        ctk.CTkLabel(header, text="MIDI Keybind Pro", font=ctk.CTkFont(family="Roboto Medium", size=24)).pack()
+        ctk.CTkLabel(header, text="MIDI Keybind Pro", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold")).pack()
         ctk.CTkLabel(header, text="Universal MIDI Input Translator", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
 
     def build_status_card(self):
-        self.status_card = ctk.CTkFrame(self.main_container, fg_color=COLOR_CARD, corner_radius=15)
+        self.status_card = ctk.CTkFrame(self.main_container, fg_color=COLOR_CARD, corner_radius=15, border_width=1, border_color="#333")
         self.status_card.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
         self.status_card.grid_columnconfigure(1, weight=1)
 
-        # Icon
-        self.status_indicator = ctk.CTkButton(self.status_card, text="", width=15, height=15, corner_radius=10, fg_color=COLOR_DANGER, hover=False, state="disabled")
+        self.status_indicator = ctk.CTkButton(self.status_card, text="", width=15, height=15, corner_radius=10, fg_color=COLOR_BTN_DISABLED_BG, hover=False, state="disabled")
         self.status_indicator.grid(row=0, column=0, padx=(20, 15), pady=25)
 
-        # Text Container
         text_frame = ctk.CTkFrame(self.status_card, fg_color="transparent")
         text_frame.grid(row=0, column=1, sticky="w", pady=15)
 
@@ -186,36 +193,29 @@ class MidiKeyTranslatorApp(ctk.CTk):
         card.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
         card.grid_columnconfigure(0, weight=1)
 
-        # Title
         ctk.CTkLabel(card, text="CONFIGURATION", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
 
-        # Profile Manager
         prof_frame = ctk.CTkFrame(card, fg_color="transparent")
         prof_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
         self.profile_lbl = ctk.CTkLabel(prof_frame, text=self.current_filename, font=ctk.CTkFont(family="Consolas", size=12))
         self.profile_lbl.pack(side="left", fill="x", expand=True)
 
-        ctk.CTkButton(prof_frame, text="Load", width=60, height=25, fg_color="#444", command=self.load_profile_dialog).pack(side="right", padx=2)
-        ctk.CTkButton(prof_frame, text="Save", width=60, height=25, fg_color="#444", command=self.save_profile_as_dialog).pack(side="right", padx=2)
-        ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color="#555", command=self.open_editor).pack(side="right", padx=10)
+        ctk.CTkButton(prof_frame, text="Load", width=60, height=25, fg_color="#333", hover_color="#444", command=self.load_profile_dialog).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Save", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_profile_as_dialog).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
 
-        # Fallback Switch
-        self.fallback_switch = ctk.CTkSwitch(card, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_ACCENT, progress_color=COLOR_ACCENT)
+        self.fallback_switch = ctk.CTkSwitch(card, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.fallback_switch.grid(row=2, column=0, padx=20, pady=10, sticky="w")
 
-        # Target Window Section
         target_frame = ctk.CTkFrame(card, fg_color="transparent")
         target_frame.grid(row=3, column=0, padx=20, pady=(5, 15), sticky="ew")
 
-        self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_ACCENT, progress_color=COLOR_ACCENT)
+        self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.target_switch.pack(side="left")
 
-        # Refresh Windows Button
-        ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#444").pack(side="right")
-
-        # Window Dropdown
-        self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150)
+        ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#333", hover_color="#444").pack(side="right")
+        self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150, fg_color="#333", button_color="#444")
         self.window_dropdown.pack(side="right", padx=5, fill="x", expand=True)
         self.window_dropdown.set("Select Window")
 
@@ -224,23 +224,46 @@ class MidiKeyTranslatorApp(ctk.CTk):
         card.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
         card.grid_columnconfigure(0, weight=1)
 
-        # Header
         head = ctk.CTkFrame(card, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(head, text="LIVE INPUT", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
 
-        # Live Indicator
-        self.live_dot = ctk.CTkLabel(head, text="●", font=ctk.CTkFont(size=16), text_color="gray")
+        self.live_dot = ctk.CTkLabel(head, text="●", font=ctk.CTkFont(size=16), text_color=COLOR_BTN_DISABLED_TEXT)
         self.live_dot.pack(side="right")
 
-        # Device Selector
+        # Device Dropdown
         self.device_var = ctk.StringVar(value="Select Device...")
-        self.device_menu = ctk.CTkOptionMenu(card, variable=self.device_var, command=self.on_device_select, fg_color="#444", button_color="#555", button_hover_color="#666")
+        self.device_menu = ctk.CTkOptionMenu(card, variable=self.device_var, command=self.on_device_select, fg_color="#333", button_color="#444", button_hover_color="#555", text_color="white")
         self.device_menu.grid(row=1, column=0, padx=20, pady=(5, 10), sticky="ew")
 
-        # Stop Button (Hidden by default, shown when running)
-        self.stop_live_btn = ctk.CTkButton(card, text="Stop Live Input", command=self.stop_live, fg_color=COLOR_DANGER, state="disabled")
-        self.stop_live_btn.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
+        # Controls Row
+        live_ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
+        live_ctrl_frame.grid(row=2, column=0, padx=20, pady=(0, 15), sticky="ew")
+        live_ctrl_frame.grid_columnconfigure((0, 1), weight=1)
+
+        self.start_live_btn = ctk.CTkButton(
+            live_ctrl_frame,
+            text="▶ Start Live",
+            command=self.manual_start_live,
+            fg_color=COLOR_LIVE_GO,
+            hover_color="#1f7f33",
+            text_color="white",
+            text_color_disabled=COLOR_BTN_DISABLED_TEXT,
+            state="disabled"
+        )
+        self.start_live_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        self.stop_live_btn = ctk.CTkButton(
+            live_ctrl_frame,
+            text="⏹ Stop Live",
+            command=self.stop_live,
+            fg_color=COLOR_DANGER,
+            hover_color="#a82522",
+            text_color="white",
+            text_color_disabled=COLOR_BTN_DISABLED_TEXT,
+            state="disabled"
+        )
+        self.stop_live_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
     def build_file_card(self):
         card = ctk.CTkFrame(self.main_container, fg_color=COLOR_CARD, corner_radius=15)
@@ -249,26 +272,51 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
         ctk.CTkLabel(card, text="MIDI FILE PLAYER", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
 
-        # File Select
         file_frame = ctk.CTkFrame(card, fg_color="transparent")
         file_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
         self.file_lbl = ctk.CTkLabel(file_frame, text="No file selected", text_color="gray")
         self.file_lbl.pack(side="left", fill="x", expand=True, anchor="w")
-        ctk.CTkButton(file_frame, text="Select", width=60, command=self.select_file, fg_color="#444").pack(side="right")
+        ctk.CTkButton(file_frame, text="Select File", width=80, command=self.select_file, fg_color="#333", hover_color="#444").pack(side="right")
 
-        # Controls
         ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
         ctrl_frame.grid(row=2, column=0, padx=20, pady=(10, 15), sticky="ew")
         ctrl_frame.grid_columnconfigure((0,1,2), weight=1)
 
-        self.btn_play = ctk.CTkButton(ctrl_frame, text="▶ Play", command=self.start_file, fg_color=COLOR_SUCCESS, state="disabled")
+        self.btn_play = ctk.CTkButton(
+            ctrl_frame,
+            text="▶ Play",
+            command=self.start_file,
+            fg_color=COLOR_BTN_DISABLED_BG,
+            hover_color="#185ABD",
+            text_color="white",
+            text_color_disabled=COLOR_BTN_DISABLED_TEXT,
+            state="disabled"
+        )
         self.btn_play.grid(row=0, column=0, padx=(0, 5), sticky="ew")
 
-        self.btn_pause = ctk.CTkButton(ctrl_frame, text="⏸ Pause", command=self.pause_file, fg_color=COLOR_WARN, text_color="black", state="disabled")
+        self.btn_pause = ctk.CTkButton(
+            ctrl_frame,
+            text="⏸ Pause",
+            command=self.pause_file,
+            fg_color=COLOR_BTN_DISABLED_BG,
+            hover_color="#B27B16",
+            text_color=COLOR_TEXT_ON_WARN, # Black text on Yellow
+            text_color_disabled=COLOR_BTN_DISABLED_TEXT,
+            state="disabled"
+        )
         self.btn_pause.grid(row=0, column=1, padx=5, sticky="ew")
 
-        self.btn_stop = ctk.CTkButton(ctrl_frame, text="⏹ Stop", command=self.stop_file, fg_color=COLOR_DANGER, state="disabled")
+        self.btn_stop = ctk.CTkButton(
+            ctrl_frame,
+            text="⏹ Stop",
+            command=self.stop_file,
+            fg_color=COLOR_BTN_DISABLED_BG,
+            hover_color="#a82522",
+            text_color="white",
+            text_color_disabled=COLOR_BTN_DISABLED_TEXT,
+            state="disabled"
+        )
         self.btn_stop.grid(row=0, column=2, padx=(5, 0), sticky="ew")
 
     def build_footer(self):
@@ -279,7 +327,6 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     # --- Logic ---
 
-    # 1. Window List Logic
     def populate_window_list(self):
         wins = get_open_windows()
         if wins:
@@ -287,7 +334,6 @@ class MidiKeyTranslatorApp(ctk.CTk):
         else:
             self.window_dropdown.configure(values=["No Windows Found"])
 
-    # 2. MIDI Device & Auto-Start
     def populate_midi_devices(self):
         try:
             devices = mido.get_input_names()
@@ -302,40 +348,43 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     def on_device_select(self, choice):
         if choice in ["No Device Found", "Error", "Select Device..."]: return
-        # Auto-Start logic
         if self.live_running:
-            self.stop_live() # Restart if changing device
-
+            self.stop_live()
         self.start_live(choice)
 
-    # 3. Status Updates
     def update_status_ui(self, main_text, sub_text, color):
         self.status_indicator.configure(fg_color=color)
         self.status_main.configure(text=main_text)
         self.status_sub.configure(text=sub_text)
 
-    # 4. Live Input Control
+    # --- Live Input Control ---
+    def manual_start_live(self):
+        device = self.device_var.get()
+        if device not in ["No Device Found", "Error", "Select Device..."]:
+            self.start_live(device)
+
     def start_live(self, device_name):
         self.live_running = True
         self.live_thread = threading.Thread(target=self.live_loop, args=(device_name,), daemon=True)
         self.live_thread.start()
 
+        self.start_live_btn.configure(state="disabled")
         self.stop_live_btn.configure(state="normal")
         self.device_menu.configure(state="disabled")
-        self.live_dot.configure(text_color=COLOR_SUCCESS)
-        self.update_status_ui("Live Active", f"Input: {device_name}", COLOR_SUCCESS)
+        self.live_dot.configure(text_color=COLOR_LIVE_GO)
+        self.update_status_ui("Live Active", f"Input: {device_name}", COLOR_LIVE_GO)
 
     def stop_live(self):
         self.live_running = False
         self.stop_live_btn.configure(state="disabled")
+        self.start_live_btn.configure(state="normal")
         self.device_menu.configure(state="normal")
-        self.live_dot.configure(text_color="gray")
+        self.live_dot.configure(text_color=COLOR_BTN_DISABLED_TEXT)
 
-        # Reset UI status depending on file player state
         if self.file_playing:
-            self.update_status_ui("Playing File", "Live input stopped", COLOR_ACCENT)
+            self.update_status_ui("Playing File", "Live input stopped", COLOR_FILE_GO)
         else:
-            self.update_status_ui("Ready", "Live input stopped", "gray")
+            self.update_status_ui("Ready", "Live input stopped", COLOR_BTN_DISABLED_BG)
 
     def live_loop(self, device):
         try:
@@ -348,75 +397,70 @@ class MidiKeyTranslatorApp(ctk.CTk):
         except Exception as e:
             print(f"Live Error: {e}")
             self.live_running = False
+            self.after(0, self.stop_live)
 
-    # 5. File Player Control
+    # --- File Player Control ---
     def select_file(self):
         f = filedialog.askopenfilename(filetypes=[("MIDI", "*.mid *.midi")])
         if f:
             self.current_midi_file = f
             self.file_lbl.configure(text=os.path.basename(f))
-            self.btn_play.configure(state="normal")
+            self.btn_play.configure(state="normal", fg_color=COLOR_FILE_GO)
 
     def start_file(self):
         if not hasattr(self, 'current_midi_file'): return
         if self.file_playing and self.file_paused:
-            # Resume
             self.file_paused = False
-            self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN)
-            self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_ACCENT)
+            self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+            self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
             return
 
-        # New Start
         self.file_playing = True
         self.file_paused = False
         self.file_thread = threading.Thread(target=self.file_loop, args=(self.current_midi_file,), daemon=True)
         self.file_thread.start()
 
-        self.btn_play.configure(state="disabled")
-        self.btn_pause.configure(state="normal", text="⏸ Pause", fg_color=COLOR_WARN)
-        self.btn_stop.configure(state="normal")
-        self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_ACCENT)
+        self.btn_play.configure(state="disabled", fg_color=COLOR_BTN_DISABLED_BG)
+        self.btn_pause.configure(state="normal", text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+        self.btn_stop.configure(state="normal", fg_color=COLOR_DANGER)
+        self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
 
     def pause_file(self):
         self.file_paused = not self.file_paused
         if self.file_paused:
-            self.btn_pause.configure(text="▶ Resume", fg_color=COLOR_SUCCESS)
+            self.btn_pause.configure(text="▶ Resume", fg_color=COLOR_FILE_GO, text_color="white")
             self.update_status_ui("Paused", "File playback paused", COLOR_WARN)
         else:
-            self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN)
-            self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_ACCENT)
+            self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+            self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
 
     def stop_file(self):
         self.file_playing = False
         self.file_paused = False
-        self.btn_play.configure(state="normal")
-        self.btn_pause.configure(state="disabled", text="⏸ Pause", fg_color=COLOR_WARN)
-        self.btn_stop.configure(state="disabled")
+        self.btn_play.configure(state="normal", fg_color=COLOR_FILE_GO)
+        self.btn_pause.configure(state="disabled", text="⏸ Pause", fg_color=COLOR_BTN_DISABLED_BG, text_color=COLOR_BTN_DISABLED_TEXT)
+        self.btn_stop.configure(state="disabled", fg_color=COLOR_BTN_DISABLED_BG)
 
         if self.live_running:
-            self.update_status_ui("Live Active", "File playback stopped", COLOR_SUCCESS)
+            self.update_status_ui("Live Active", "File playback stopped", COLOR_LIVE_GO)
         else:
-            self.update_status_ui("Ready", "Playback stopped", "gray")
+            self.update_status_ui("Ready", "Playback stopped", COLOR_BTN_DISABLED_BG)
 
     def file_loop(self, filepath):
         try:
             mid = mido.MidiFile(filepath)
             for msg in mid.play():
                 if not self.file_playing: break
-
-                # Handle Pause
                 while self.file_paused and self.file_playing:
                     time.sleep(0.1)
-
                 if not self.check_can_press(): continue
                 self.process_msg(msg)
         except Exception as e:
             print(f"File Error: {e}")
         finally:
-            # Auto-stop when done
             self.after(0, self.stop_file)
 
-    # 6. Shared Logic
+    # --- Shared Logic ---
     def process_msg(self, msg):
         if msg.type == 'note_on' and msg.velocity > 0:
             k = self.resolve_key(msg.note)
@@ -468,7 +512,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.key_map = new_map
         save_keymap_to_file(self.current_filename, self.key_map)
 
-# --- Sleek Editor Class (Same as before) ---
+# --- Sleek Editor Class ---
 class SleekEditor(ctk.CTkToplevel):
     def __init__(self, parent, key_map, callback):
         super().__init__(parent)
@@ -485,7 +529,7 @@ class SleekEditor(ctk.CTkToplevel):
         style = ttk.Style()
         style.theme_use("default")
         style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", borderwidth=0, rowheight=28)
-        style.map('Treeview', background=[('selected', COLOR_ACCENT)])
+        style.map('Treeview', background=[('selected', COLOR_PRIMARY)])
         style.configure("Treeview.Heading", background="#333", foreground="white", relief="flat")
 
         cols = ("MIDI", "Note", "Keys")
@@ -504,8 +548,8 @@ class SleekEditor(ctk.CTkToplevel):
         action_frame = ctk.CTkFrame(self, fg_color="transparent")
         action_frame.grid(row=2, column=0, pady=20)
 
-        ctk.CTkButton(action_frame, text="Save Changes", command=self.save, fg_color=COLOR_SUCCESS, hover_color="#229C68").pack(side="left", padx=5)
-        ctk.CTkButton(action_frame, text="Cancel", command=self.destroy, fg_color="transparent", border_width=1, text_color="gray").pack(side="left", padx=5)
+        ctk.CTkButton(action_frame, text="Save Changes", command=self.save, fg_color=COLOR_LIVE_GO, hover_color="#238636").pack(side="left", padx=5)
+        ctk.CTkButton(action_frame, text="Cancel", command=self.destroy, fg_color="transparent", border_width=1, text_color="#AAAAAA").pack(side="left", padx=5)
         ctk.CTkButton(action_frame, text="Clear All", command=self.clear, fg_color="#333", hover_color=COLOR_DANGER).pack(side="left", padx=5)
 
         self.grab_set()
@@ -546,13 +590,13 @@ class SleekKeyCapture(ctk.CTkToplevel):
         self.result = None
         self.keys = []
         ctk.CTkLabel(self, text=title, font=ctk.CTkFont(size=14)).pack(pady=(20, 5))
-        self.lbl = ctk.CTkLabel(self, text="...", font=ctk.CTkFont(size=24, weight="bold"), text_color=COLOR_ACCENT)
+        self.lbl = ctk.CTkLabel(self, text="...", font=ctk.CTkFont(size=24, weight="bold"), text_color=COLOR_PRIMARY)
         self.lbl.pack(pady=10)
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(side="bottom", pady=20)
         ctk.CTkButton(btn_frame, text="Clear", width=60, fg_color="#444", command=self.do_clear).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="Unbind", width=60, fg_color=COLOR_DANGER, command=self.do_unbind).pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Save", width=60, fg_color=COLOR_SUCCESS, command=self.do_save).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Save", width=60, fg_color=COLOR_LIVE_GO, command=self.do_save).pack(side="left", padx=5)
         self.bind("<KeyPress>", self.on_key)
         self.focus_force()
         self.wait_window()

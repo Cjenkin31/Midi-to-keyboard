@@ -34,6 +34,7 @@ MANIFEST
 # User-generated files
 keymap.json
 
+
 # Virtual Environments
 .env
 .venv
