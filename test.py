@@ -232,9 +232,16 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.live_dot.pack(side="right")
 
         # Device Dropdown
+        device_frame = ctk.CTkFrame(card, fg_color="transparent")
+        device_frame.grid(row=1, column=0, padx=20, pady=(5, 10), sticky="ew")
+        device_frame.grid_columnconfigure(0, weight=1)
+        
         self.device_var = ctk.StringVar(value="Select Device...")
-        self.device_menu = ctk.CTkOptionMenu(card, variable=self.device_var, command=self.on_device_select, fg_color="#333", button_color="#444", button_hover_color="#555", text_color="white")
-        self.device_menu.grid(row=1, column=0, padx=20, pady=(5, 10), sticky="ew")
+        self.device_menu = ctk.CTkOptionMenu(device_frame, variable=self.device_var, command=self.on_device_select, fg_color="#333", button_color="#444", button_hover_color="#555", text_color="white")
+        self.device_menu.grid(row=0, column=0, sticky="ew")
+
+        ctk.CTkButton(device_frame, text="↻", width=30, height=25, command=self.populate_midi_devices, fg_color="#333", hover_color="#444").grid(row=0, column=1, padx=(5,0))
+
 
         # Controls Row
         live_ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
