@@ -332,6 +332,9 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.live_dot = ctk.CTkLabel(head, text="●", font=ctk.CTkFont(size=16), text_color=COLOR_BTN_DISABLED_TEXT)
         self.live_dot.pack(side="right")
 
+        self.note_display = ctk.CTkLabel(head, text="--", font=ctk.CTkFont(family="Consolas", size=14, weight="bold"), text_color=COLOR_TEXT_SUB, width=50)
+        self.note_display.pack(side="right", padx=(0, 10))
+
         # Device Dropdown
         device_frame = ctk.CTkFrame(card, fg_color="transparent")
         device_frame.grid(row=1, column=0, padx=20, pady=(5, 10), sticky="ew")
@@ -378,7 +381,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
         card.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
         card.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(card, text="MIDI FILE PLAYER", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).grid(row=0, column=0, padx=20, pady=(15, 5), sticky="w")
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
+        ctk.CTkLabel(head, text="MIDI FILE PLAYER", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
+        self.file_note_display = ctk.CTkLabel(head, text="--", font=ctk.CTkFont(family="Consolas", size=14, weight="bold"), text_color=COLOR_TEXT_SUB, width=50)
+        self.file_note_display.pack(side="right")
 
         file_frame = ctk.CTkFrame(card, fg_color="transparent")
         file_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
@@ -571,11 +578,23 @@ class MidiKeyTranslatorApp(ctk.CTk):
             self.after(0, self.stop_file)
 
     # --- Shared Logic ---
+    def update_note_ui(self, name, active):
+        color = COLOR_PRIMARY if active else COLOR_TEXT_SUB
+        if active:
+            self.note_display.configure(text=name, text_color=color)
+            self.file_note_display.configure(text=name, text_color=color)
+        else:
+            self.note_display.configure(text_color=color)
+            self.file_note_display.configure(text_color=color)
+
     def process_msg(self, msg):
         if msg.type == 'note_on' and msg.velocity > 0:
+            name = midi_to_note_name(msg.note)
+            self.after(0, lambda: self.update_note_ui(name, True))
             k = self.resolve_key(msg.note)
             if k: press_keys_for_midi(k, 'down')
         elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+            self.after(0, lambda: self.update_note_ui(None, False))
             k = self.resolve_key(msg.note)
             if k: press_keys_for_midi(k, 'up')
 
