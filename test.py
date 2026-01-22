@@ -97,19 +97,34 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-def load_keymap_from_file(filename):
+def load_profile_data(filename):
     # Try local file first, then bundled resource
     target_path = filename if os.path.exists(filename) else resource_path(filename)
+    
+    # Default name derived from filename
+    display_name = os.path.splitext(os.path.basename(filename))[0].replace("_", " ").title()
+    default_meta = {"name": display_name, "linked_window": ""}
+    
     try:
         with open(target_path, 'r') as f:
-            return {int(k): v for k, v in json.load(f).items()}
+            data = json.load(f)
+            # Check for new format with metadata
+            if "metadata" in data and "mappings" in data:
+                meta = data["metadata"]
+                if meta.get("name") == "Unnamed Profile":
+                    meta["name"] = display_name
+                return {int(k): v for k, v in data["mappings"].items()}, meta
+            else:
+                # Legacy format (just mappings)
+                return {int(k): v for k, v in data.items()}, default_meta
     except (FileNotFoundError, json.JSONDecodeError):
-        return create_default_88_key_map()
+        return create_default_88_key_map(), default_meta
 
-def save_keymap_to_file(filename, key_map):
+def save_profile_data(filename, key_map, metadata):
+    data = {"metadata": metadata, "mappings": key_map}
     try:
         with open(filename, 'w') as f:
-            json.dump(key_map, f, indent=4, sort_keys=True)
+            json.dump(data, f, indent=4, sort_keys=True)
     except Exception as e:
         messagebox.showerror("Save Error", f"Could not save file:\n{e}")
 
@@ -150,11 +165,14 @@ class MidiKeyTranslatorApp(ctk.CTk):
         # Configuration
         self.pin_var = tk.BooleanVar(value=True)
         self.fallback_var = tk.BooleanVar(value=True)
-        self.use_target_window = tk.BooleanVar(value=False)
+        self.use_target_window = tk.BooleanVar(value=True)
         self.target_window_title = tk.StringVar(value="")
 
         self.current_filename = DEFAULT_FILENAME
-        self.key_map = load_keymap_from_file(self.current_filename)
+        self.key_map, self.current_metadata = load_profile_data(self.current_filename)
+        
+        self.profile_cache = []
+        self.scan_profiles()
 
         # --- UI Construction ---
         self.main_container = ctk.CTkScrollableFrame(self, fg_color=COLOR_BG, corner_radius=0)
@@ -184,6 +202,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.populate_window_list()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.toggle_pin()
+        self.after(1000, self.auto_switch_loop)
 
     def extract_bundled_configs(self):
         """Extracts bundled JSON files to the local directory so they are visible in dialogs."""
@@ -197,6 +216,28 @@ class MidiKeyTranslatorApp(ctk.CTk):
                             shutil.copy2(os.path.join(sys._MEIPASS, filename), dest)
             except Exception as e:
                 print(f"Config extraction failed: {e}")
+
+    def scan_profiles(self):
+        """Scans directory for JSON profiles and caches metadata."""
+        self.profile_cache = []
+        try:
+            for f in os.listdir("."):
+                if f.lower().endswith(".json"):
+                    _, meta = load_profile_data(f)
+                    self.profile_cache.append({"filename": f, "metadata": meta})
+        except Exception as e:
+            print(f"Scan error: {e}")
+
+    def auto_switch_loop(self):
+        """Checks active window and switches profile if a link is found."""
+        active = get_active_window_title()
+        if active:
+            for prof in self.profile_cache:
+                link = prof["metadata"].get("linked_window", "")
+                if link and link.lower() in active.lower() and prof["filename"] != self.current_filename:
+                    self.load_profile(prof["filename"])
+                    break
+        self.after(1500, self.auto_switch_loop)
 
     def build_header(self):
         header = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -254,12 +295,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
         prof_frame = ctk.CTkFrame(card, fg_color="transparent")
         prof_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
-        self.profile_lbl = ctk.CTkLabel(prof_frame, text=self.current_filename, font=ctk.CTkFont(family="Consolas", size=12))
+        self.profile_lbl = ctk.CTkLabel(prof_frame, text=self.current_metadata.get("name", "Unknown"), font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"))
         self.profile_lbl.pack(side="left", fill="x", expand=True)
 
-        ctk.CTkButton(prof_frame, text="New", width=50, height=25, fg_color="#333", hover_color="#444", command=self.new_profile).pack(side="right", padx=2)
-        ctk.CTkButton(prof_frame, text="Load", width=60, height=25, fg_color="#333", hover_color="#444", command=self.load_profile_dialog).pack(side="right", padx=2)
-        ctk.CTkButton(prof_frame, text="Save", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_profile_as_dialog).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Manage Profiles", width=100, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Save Map", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_current_map).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
 
         fb_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -561,31 +601,130 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.destroy()
 
     # --- Profile Dialogs ---
-    def new_profile(self):
-        self.key_map = create_default_88_key_map()
-        self.current_filename = "New Profile"
-        self.profile_lbl.configure(text=self.current_filename)
+    def open_profile_manager(self):
+        self.scan_profiles() # Refresh cache
+        ProfileManager(self, self.profile_cache, self.load_profile, self.scan_profiles)
 
-    def load_profile_dialog(self):
-        f = filedialog.askopenfilename(filetypes=[("JSON", "*.json")], initialdir=os.getcwd())
-        if f:
-            self.current_filename = f
-            self.key_map = load_keymap_from_file(f)
-            self.profile_lbl.configure(text=os.path.basename(f))
+    def load_profile(self, filename):
+        self.current_filename = filename
+        self.key_map, self.current_metadata = load_profile_data(filename)
+        self.profile_lbl.configure(text=self.current_metadata.get("name", filename))
+        # Update window title to show loaded profile
+        self.title(f"MIDI Keybind Pro - {self.current_metadata.get('name', filename)}")
 
-    def save_profile_as_dialog(self):
-        f = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")], initialdir=os.getcwd())
-        if f:
-            self.current_filename = f
-            save_keymap_to_file(f, self.key_map)
-            self.profile_lbl.configure(text=os.path.basename(f))
+    def save_current_map(self):
+        save_profile_data(self.current_filename, self.key_map, self.current_metadata)
 
     def open_editor(self):
         SleekEditor(self, self.key_map, self.update_key_map)
 
     def update_key_map(self, new_map):
         self.key_map = new_map
-        save_keymap_to_file(self.current_filename, self.key_map)
+        save_profile_data(self.current_filename, self.key_map, self.current_metadata)
+
+# --- Profile Manager Class ---
+class ProfileManager(ctk.CTkToplevel):
+    def __init__(self, parent, profiles, load_callback, refresh_callback):
+        super().__init__(parent)
+        self.title("Profile Manager")
+        self.geometry("500x400")
+        self.profiles = profiles
+        self.load_callback = load_callback
+        self.refresh_callback = refresh_callback
+        self.parent = parent
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Header
+        top_frame = ctk.CTkFrame(self, fg_color="transparent")
+        top_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=15)
+        ctk.CTkLabel(top_frame, text="Configuration Profiles", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        ctk.CTkButton(top_frame, text="+ Create New", width=100, fg_color=COLOR_LIVE_GO, command=self.create_new).pack(side="right")
+
+        # List
+        self.scroll = ctk.CTkScrollableFrame(self, fg_color="#222")
+        self.scroll.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.scroll.grid_columnconfigure(0, weight=1)
+        
+        self.populate_list()
+        self.grab_set()
+
+    def populate_list(self):
+        for widget in self.scroll.winfo_children(): widget.destroy()
+        
+        for prof in self.profiles:
+            row = ctk.CTkFrame(self.scroll, fg_color="#2b2b2b")
+            row.pack(fill="x", pady=2)
+            
+            info_frame = ctk.CTkFrame(row, fg_color="transparent")
+            info_frame.pack(side="left", padx=10, pady=5)
+            
+            name = prof["metadata"].get("name", "Unknown")
+            link = prof["metadata"].get("linked_window", "")
+            
+            ctk.CTkLabel(info_frame, text=name, font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+            if link:
+                ctk.CTkLabel(info_frame, text=f"🔗 Auto-switch: {link}", font=ctk.CTkFont(size=11), text_color=COLOR_PRIMARY).pack(anchor="w")
+            else:
+                ctk.CTkLabel(info_frame, text="No auto-switch linked", font=ctk.CTkFont(size=11), text_color="#666").pack(anchor="w")
+
+            ctk.CTkButton(row, text="Load", width=50, height=24, fg_color="#444", hover_color=COLOR_PRIMARY, command=lambda f=prof["filename"]: self.do_load(f)).pack(side="right", padx=5)
+            ctk.CTkButton(row, text="⚙", width=30, height=24, fg_color="transparent", border_width=1, border_color="#555", command=lambda p=prof: self.edit_meta(p)).pack(side="right", padx=5)
+
+    def do_load(self, filename):
+        self.load_callback(filename)
+        self.destroy()
+
+    def create_new(self):
+        self.edit_meta(None)
+
+    def edit_meta(self, profile_data):
+        # If profile_data is None, we are creating new
+        is_new = profile_data is None
+        title = "Create Profile" if is_new else "Edit Profile Settings"
+        
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(title)
+        dialog.geometry("300x250")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text="Profile Name").pack(pady=(15, 5))
+        name_entry = ctk.CTkEntry(dialog)
+        name_entry.pack(pady=5)
+        if not is_new: name_entry.insert(0, profile_data["metadata"].get("name", ""))
+
+        ctk.CTkLabel(dialog, text="Auto-Switch Window Title (Optional)").pack(pady=(15, 5))
+        
+        # Use ComboBox to allow selecting open windows OR typing custom ones
+        link_entry = ctk.CTkComboBox(dialog, values=get_open_windows())
+        link_entry.pack(pady=5)
+        if not is_new: 
+            link_entry.set(profile_data["metadata"].get("linked_window", ""))
+        else:
+            link_entry.set("")
+
+        def save():
+            name = name_entry.get()
+            link = link_entry.get()
+            if not name: return
+            
+            if is_new:
+                safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip()
+                filename = f"{safe_name.replace(' ', '_')}.json"
+                mappings = create_default_88_key_map()
+            else:
+                filename = profile_data["filename"]
+                mappings, _ = load_profile_data(filename)
+
+            save_profile_data(filename, mappings, {"name": name, "linked_window": link})
+            self.refresh_callback() # Refresh parent cache
+            self.profiles = self.parent.profile_cache # Update local list
+            self.populate_list()
+            dialog.destroy()
+
+        ctk.CTkButton(dialog, text="Save", command=save, fg_color=COLOR_LIVE_GO).pack(pady=20)
 
 # --- Sleek Editor Class ---
 class SleekEditor(ctk.CTkToplevel):
