@@ -9,6 +9,13 @@ import copy
 import json
 import os
 import ctypes
+import webbrowser
+import shutil
+import sys
+try:
+    import rtmidi
+except ImportError:
+    pass
 
 # --- Theme Configuration ---
 ctk.set_appearance_mode("Dark")
@@ -81,9 +88,20 @@ def midi_to_note_name(note_number):
     note = note_names[note_number % 12]
     return f"{note}{octave}"
 
-def load_keymap_from_file(filename):
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        with open(filename, 'r') as f:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+def load_keymap_from_file(filename):
+    # Try local file first, then bundled resource
+    target_path = filename if os.path.exists(filename) else resource_path(filename)
+    try:
+        with open(target_path, 'r') as f:
             return {int(k): v for k, v in json.load(f).items()}
     except (FileNotFoundError, json.JSONDecodeError):
         return create_default_88_key_map()
@@ -114,6 +132,8 @@ def find_fallback_key(note, key_map):
 class MidiKeyTranslatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+
+        self.extract_bundled_configs()
 
         self.title("MIDI Keybind Pro")
         self.geometry("500x820")
@@ -165,11 +185,47 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.toggle_pin()
 
+    def extract_bundled_configs(self):
+        """Extracts bundled JSON files to the local directory so they are visible in dialogs."""
+        # Check if running as PyInstaller bundle
+        if hasattr(sys, '_MEIPASS'):
+            try:
+                for filename in os.listdir(sys._MEIPASS):
+                    if filename.lower().endswith('.json'):
+                        dest = os.path.join(os.getcwd(), filename)
+                        if not os.path.exists(dest):
+                            shutil.copy2(os.path.join(sys._MEIPASS, filename), dest)
+            except Exception as e:
+                print(f"Config extraction failed: {e}")
+
     def build_header(self):
         header = ctk.CTkFrame(self.main_container, fg_color="transparent")
         header.grid(row=0, column=0, pady=(20, 10), sticky="ew")
         ctk.CTkLabel(header, text="MIDI Keybind Pro", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold")).pack()
         ctk.CTkLabel(header, text="Universal MIDI Input Translator", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
+
+    def create_info_btn(self, parent, title, message):
+        return ctk.CTkButton(parent, text="?", width=20, height=20, corner_radius=10,
+                            fg_color="transparent", border_width=1, border_color=COLOR_TEXT_SUB,
+                            text_color=COLOR_TEXT_SUB, hover_color="#333",
+                            command=lambda: self.show_custom_info(title, message))
+
+    def show_custom_info(self, title, message):
+        top = ctk.CTkToplevel(self)
+        top.title("")
+        top.geometry("320x180")
+        top.resizable(False, False)
+        top.transient(self)
+        top.grab_set()
+        
+        # Center on parent
+        x = self.winfo_x() + (self.winfo_width() // 2) - 160
+        y = self.winfo_y() + (self.winfo_height() // 2) - 90
+        top.geometry(f"+{x}+{y}")
+        
+        ctk.CTkLabel(top, text=title, font=ctk.CTkFont(size=15, weight="bold"), text_color=COLOR_PRIMARY).pack(pady=(20, 10))
+        ctk.CTkLabel(top, text=message, font=ctk.CTkFont(size=12), wraplength=280, text_color="#DDDDDD").pack(pady=5)
+        ctk.CTkButton(top, text="Got it", width=80, height=25, command=top.destroy).pack(pady=20)
 
     def build_status_card(self):
         self.status_card = ctk.CTkFrame(self.main_container, fg_color=COLOR_CARD, corner_radius=15, border_width=1, border_color="#333")
@@ -201,18 +257,23 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.profile_lbl = ctk.CTkLabel(prof_frame, text=self.current_filename, font=ctk.CTkFont(family="Consolas", size=12))
         self.profile_lbl.pack(side="left", fill="x", expand=True)
 
+        ctk.CTkButton(prof_frame, text="New", width=50, height=25, fg_color="#333", hover_color="#444", command=self.new_profile).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Load", width=60, height=25, fg_color="#333", hover_color="#444", command=self.load_profile_dialog).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Save", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_profile_as_dialog).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
 
-        self.fallback_switch = ctk.CTkSwitch(card, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
-        self.fallback_switch.grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        fb_frame = ctk.CTkFrame(card, fg_color="transparent")
+        fb_frame.grid(row=2, column=0, padx=20, pady=10, sticky="w")
+        self.fallback_switch = ctk.CTkSwitch(fb_frame, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
+        self.fallback_switch.pack(side="left")
+        self.create_info_btn(fb_frame, "Smart Octave Fallback", "If a note is not mapped, this attempts to find the same note in a different octave that IS mapped.").pack(side="left", padx=10)
 
         target_frame = ctk.CTkFrame(card, fg_color="transparent")
         target_frame.grid(row=3, column=0, padx=20, pady=(5, 15), sticky="ew")
 
         self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.target_switch.pack(side="left")
+        self.create_info_btn(target_frame, "Focus Protection", "When enabled, keys will ONLY be pressed if the selected window is currently active (in the foreground).").pack(side="left", padx=5)
 
         ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#333", hover_color="#444").pack(side="right")
         self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150, fg_color="#333", button_color="#444")
@@ -331,6 +392,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         footer.grid(row=1, column=0, sticky="ew")
         self.pin_check = ctk.CTkCheckBox(footer, text="Always on Top", variable=self.pin_var, command=self.toggle_pin, font=ctk.CTkFont(size=12), checkmark_color=COLOR_BG, fg_color=COLOR_TEXT_SUB)
         self.pin_check.pack(side="left", padx=20, pady=10)
+        ctk.CTkButton(footer, text="☕ Donate", width=80, height=24, fg_color="#333", hover_color="#FF5E5B", font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://ko-fi.com/unbutteredbagel")).pack(side="right", padx=20)
 
     # --- Logic ---
 
@@ -350,8 +412,9 @@ class MidiKeyTranslatorApp(ctk.CTk):
             else:
                 self.device_menu.configure(values=["No Device Found"])
                 self.device_var.set("No Device Found")
-        except:
-            self.device_menu.configure(values=["Error"])
+        except Exception as e:
+            self.device_menu.configure(values=[f"Error: {e}"])
+            self.device_var.set("Error")
 
     def on_device_select(self, choice):
         if choice in ["No Device Found", "Error", "Select Device..."]: return
@@ -498,6 +561,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.destroy()
 
     # --- Profile Dialogs ---
+    def new_profile(self):
+        self.key_map = create_default_88_key_map()
+        self.current_filename = "New Profile"
+        self.profile_lbl.configure(text=self.current_filename)
+
     def load_profile_dialog(self):
         f = filedialog.askopenfilename(filetypes=[("JSON", "*.json")], initialdir=os.getcwd())
         if f:
