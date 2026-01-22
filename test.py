@@ -4,6 +4,7 @@ from tkinter import ttk, messagebox, filedialog
 import mido
 import threading
 import time
+import mido.backends.rtmidi
 import pydirectinput
 import copy
 import json
@@ -150,7 +151,17 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
         self.extract_bundled_configs()
 
+        # Set App ID so the taskbar icon displays correctly
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MidiKeybindPro.App.1.0")
+        except:
+            pass
+
         self.title("MIDI Keybind Pro")
+        try:
+            self.iconbitmap(resource_path("icon.ico"))
+        except:
+            pass
         self.geometry("500x820")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -239,11 +250,27 @@ class MidiKeyTranslatorApp(ctk.CTk):
                     break
         self.after(1500, self.auto_switch_loop)
 
+    def restart_as_admin(self):
+        try:
+            if getattr(sys, 'frozen', False):
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv[1:]), None, 1)
+            else:
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            self.destroy()
+        except Exception as e:
+            print(f"Admin restart failed: {e}")
+
     def build_header(self):
         header = ctk.CTkFrame(self.main_container, fg_color="transparent")
         header.grid(row=0, column=0, pady=(20, 10), sticky="ew")
         ctk.CTkLabel(header, text="MIDI Keybind Pro", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold")).pack()
         ctk.CTkLabel(header, text="Universal MIDI Input Translator", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
+
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            admin_frame = ctk.CTkFrame(header, fg_color="transparent")
+            admin_frame.pack(pady=(5, 0))
+            ctk.CTkButton(admin_frame, text="🛡️ Run as Admin", width=120, height=24, fg_color="#333", hover_color="#444", command=self.restart_as_admin).pack(side="left", padx=5)
+            self.create_info_btn(admin_frame, "Administrator Privileges", "Required for some games (e.g., Genshin Impact, Valorant) that block simulated input from non-admin programs.").pack(side="left")
 
     def create_info_btn(self, parent, title, message):
         return ctk.CTkButton(parent, text="?", width=20, height=20, corner_radius=10,
