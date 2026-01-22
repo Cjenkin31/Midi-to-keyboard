@@ -68,6 +68,22 @@ def get_active_window_title():
     user32.GetWindowTextW(hWnd, buf, length + 1)
     return buf.value
 
+def focus_window_by_title(title):
+    if not title: return
+    def foreach_window(hwnd, lParam):
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length > 0:
+            buff = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buff, length + 1)
+            if buff.value == title:
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, 9) # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+                return False
+        return True
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+    user32.EnumWindows(WNDENUMPROC(foreach_window), 0)
+
 # --- Logic Helpers ---
 def create_default_88_key_map():
     return {
@@ -553,6 +569,12 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     def start_file(self):
         if not hasattr(self, 'current_midi_file'): return
+
+        if self.use_target_window.get():
+            target = self.window_dropdown.get()
+            if target and target != "Select Window":
+                focus_window_by_title(target)
+
         if self.file_playing and self.file_paused:
             self.file_paused = False
             self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
