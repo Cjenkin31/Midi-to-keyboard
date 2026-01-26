@@ -13,6 +13,7 @@ import ctypes
 import webbrowser
 import shutil
 import sys
+import random
 try:
     import rtmidi
 except ImportError:
@@ -192,7 +193,9 @@ class MidiKeyTranslatorApp(ctk.CTk):
         # Configuration
         self.pin_var = tk.BooleanVar(value=True)
         self.fallback_var = tk.BooleanVar(value=True)
+        self.jitter_var = tk.BooleanVar(value=False)
         self.use_target_window = tk.BooleanVar(value=True)
+        self.speed_modifier_var = tk.DoubleVar(value=1.0) # New: Speed modifier for file playback
         self.target_window_title = tk.StringVar(value="")
 
         self.current_filename = DEFAULT_FILENAME
@@ -288,7 +291,6 @@ class MidiKeyTranslatorApp(ctk.CTk):
             admin_frame.pack(pady=(5, 0))
             ctk.CTkButton(admin_frame, text="🛡️ Run as Admin", width=120, height=24, fg_color="#333", hover_color="#444", command=self.restart_as_admin).pack(side="left", padx=5)
             self.create_info_btn(admin_frame, "Administrator Privileges", "Required for some games (e.g., Genshin Impact, Valorant) that block simulated input from non-admin programs.").pack(side="left")
-            self.create_info_btn(admin_frame, "Administrator Privileges", "Needed for games with anti-cheat (Valorant, Genshin, etc).").pack(side="left")
 
     def create_info_btn(self, parent, title, message):
         return ctk.CTkButton(parent, text="?", width=20, height=20, corner_radius=10,
@@ -324,11 +326,9 @@ class MidiKeyTranslatorApp(ctk.CTk):
         text_frame = ctk.CTkFrame(self.status_card, fg_color="transparent")
         text_frame.grid(row=0, column=1, sticky="w", pady=15)
 
-        self.status_main = ctk.CTkLabel(text_frame, text="Inactive", font=ctk.CTkFont(size=18, weight="bold"), anchor="w")
         self.status_main = ctk.CTkLabel(text_frame, text="Standby", font=ctk.CTkFont(size=18, weight="bold"), anchor="w")
         self.status_main.pack(anchor="w")
 
-        self.status_sub = ctk.CTkLabel(text_frame, text="Select a device or file to begin", font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_SUB, anchor="w")
         self.status_sub = ctk.CTkLabel(text_frame, text="Waiting for input...", font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_SUB, anchor="w")
         self.status_sub.pack(anchor="w")
 
@@ -345,7 +345,6 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.profile_lbl = ctk.CTkLabel(prof_frame, text=self.current_metadata.get("name", "Unknown"), font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"))
         self.profile_lbl.pack(side="left", fill="x", expand=True)
 
-        ctk.CTkButton(prof_frame, text="Manage Profiles", width=100, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Profiles", width=80, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Save Map", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_current_map).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
@@ -353,19 +352,21 @@ class MidiKeyTranslatorApp(ctk.CTk):
         fb_frame = ctk.CTkFrame(card, fg_color="transparent")
         fb_frame.grid(row=2, column=0, padx=20, pady=10, sticky="w")
         self.fallback_switch = ctk.CTkSwitch(fb_frame, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
-        self.fallback_switch = ctk.CTkSwitch(fb_frame, text="Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.fallback_switch.pack(side="left")
         self.create_info_btn(fb_frame, "Smart Octave Fallback", "If a note is not mapped, this attempts to find the same note in a different octave that IS mapped.").pack(side="left", padx=10)
-        self.create_info_btn(fb_frame, "Octave Fallback", "Plays the nearest mapped octave if a note is missing.").pack(side="left", padx=10)
+        
+        jitter_frame = ctk.CTkFrame(card, fg_color="transparent")
+        jitter_frame.grid(row=3, column=0, padx=20, pady=(0, 10), sticky="w")
+        self.jitter_switch = ctk.CTkSwitch(jitter_frame, text="Gaussian Jitter", variable=self.jitter_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
+        self.jitter_switch.pack(side="left")
+        self.create_info_btn(jitter_frame, "Gaussian Jitter", "Adds a small random delay to key presses to simulate human imperfection.").pack(side="left", padx=10)
 
         target_frame = ctk.CTkFrame(card, fg_color="transparent")
-        target_frame.grid(row=3, column=0, padx=20, pady=(5, 15), sticky="ew")
+        target_frame.grid(row=4, column=0, padx=20, pady=(5, 15), sticky="ew")
 
         self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
-        self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Lock", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.target_switch.pack(side="left")
         self.create_info_btn(target_frame, "Focus Protection", "When enabled, keys will ONLY be pressed if the selected window is currently active (in the foreground).").pack(side="left", padx=5)
-        self.create_info_btn(target_frame, "Focus Lock", "Stops typing if you tab out of the game.").pack(side="left", padx=5)
 
         ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#333", hover_color="#444").pack(side="right")
         self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150, fg_color="#333", button_color="#444")
@@ -448,10 +449,31 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.file_lbl.pack(side="left", fill="x", expand=True, anchor="w")
         ctk.CTkButton(file_frame, text="Select File", width=80, command=self.select_file, fg_color="#333", hover_color="#444").pack(side="right")
 
-        ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
-        ctrl_frame.grid(row=2, column=0, padx=20, pady=(10, 15), sticky="ew")
-        ctrl_frame.grid_columnconfigure((0,1,2), weight=1)
+        # New: Playback Speed Control
+        speed_frame = ctk.CTkFrame(card, fg_color="transparent")
+        speed_frame.grid(row=2, column=0, padx=20, pady=(5, 10), sticky="ew")
+        speed_frame.grid_columnconfigure(1, weight=1)
 
+        ctk.CTkLabel(speed_frame, text="Playback Speed:", font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w")
+        
+        self.speed_slider = ctk.CTkSlider(
+            speed_frame,
+            from_=0.25, to=4.0, # Range from 0.25x to 4.0x speed
+            number_of_steps=15, # Steps for 0.25, 0.5, 0.75, 1.0, ..., 4.0
+            variable=self.speed_modifier_var,
+            command=self.update_speed_label,
+            button_color=COLOR_PRIMARY,
+            progress_color=COLOR_PRIMARY
+        )
+        self.speed_slider.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+
+        self.speed_label = ctk.CTkLabel(speed_frame, text="1.00x", font=ctk.CTkFont(size=12, weight="bold"))
+        self.speed_label.grid(row=0, column=2, padx=(10, 0), sticky="e")
+
+        ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
+        ctrl_frame.grid(row=3, column=0, padx=20, pady=(10, 15), sticky="ew") # Moved to row 3
+        ctrl_frame.grid_columnconfigure((0,1,2), weight=1)
+        
         self.btn_play = ctk.CTkButton(
             ctrl_frame,
             text="▶ Play",
@@ -494,6 +516,9 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.pin_check = ctk.CTkCheckBox(footer, text="Always on Top", variable=self.pin_var, command=self.toggle_pin, font=ctk.CTkFont(size=12), checkmark_color=COLOR_BG, fg_color=COLOR_TEXT_SUB)
         self.pin_check.pack(side="left", padx=20, pady=10)
         ctk.CTkButton(footer, text="☕ Donate", width=80, height=24, fg_color="#333", hover_color="#FF5E5B", font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://ko-fi.com/unbutteredbagel")).pack(side="right", padx=20)
+
+    def update_speed_label(self, value):
+        self.speed_label.configure(text=f"{value:.2f}x")
 
     # --- Logic ---
 
@@ -626,10 +651,18 @@ class MidiKeyTranslatorApp(ctk.CTk):
     def file_loop(self, filepath):
         try:
             mid = mido.MidiFile(filepath)
-            for msg in mid.play():
+            # Iterate over messages to manually control timing for speed modification
+            for msg in mid:
                 if not self.file_playing: break
                 while self.file_paused and self.file_playing:
                     time.sleep(0.1)
+                
+                # Manually sleep based on message time and speed modifier
+                if msg.time > 0:
+                    time.sleep(msg.time / self.speed_modifier_var.get())
+
+                if not self.file_playing: break # Check again in case stop was pressed during sleep
+
                 if not self.check_can_press(): continue
                 self.process_msg(msg)
         except Exception as e:
@@ -649,6 +682,10 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     def process_msg(self, msg):
         if msg.type == 'note_on' and msg.velocity > 0:
+            # Apply a more subtle jitter only to note_on events for a more natural feel
+            if self.jitter_var.get():
+                time.sleep(max(0, random.gauss(0.005, 0.002))) # 5ms mean, 2ms std dev
+
             name = midi_to_note_name(msg.note)
             self.after(0, lambda: self.update_note_ui(name, True))
             k = self.resolve_key(msg.note)
@@ -719,8 +756,6 @@ class ProfileManager(ctk.CTkToplevel):
         top_frame = ctk.CTkFrame(self, fg_color="transparent")
         top_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=15)
         ctk.CTkLabel(top_frame, text="Configuration Profiles", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
-        ctk.CTkButton(top_frame, text="+ Create New", width=100, fg_color=COLOR_LIVE_GO, command=self.create_new).pack(side="right")
-        ctk.CTkLabel(top_frame, text="Profiles", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
         ctk.CTkButton(top_frame, text="+ New", width=80, fg_color=COLOR_LIVE_GO, command=self.create_new).pack(side="right")
 
         # List
