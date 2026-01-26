@@ -39,6 +39,10 @@
         "72": "i"
     },
     "metadata": {
+        "hotkeys": {
+            "play_pause": "f9",
+            "stop": "f10"
+        },
         "linked_window": "Heartopia",
         "name": "Heartopia"
     }

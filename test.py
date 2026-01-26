@@ -18,6 +18,10 @@ try:
     import rtmidi
 except ImportError:
     pass
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
 
 # --- Theme Configuration ---
 ctk.set_appearance_mode("Dark")
@@ -121,7 +125,7 @@ def load_profile_data(filename):
     
     # Default name derived from filename
     display_name = os.path.splitext(os.path.basename(filename))[0].replace("_", " ").title()
-    default_meta = {"name": display_name, "linked_window": ""}
+    default_meta = {"name": display_name, "linked_window": "", "hotkeys": {"play_pause": "f9", "stop": "f10"}}
     
     try:
         with open(target_path, 'r') as f:
@@ -131,6 +135,8 @@ def load_profile_data(filename):
                 meta = data["metadata"]
                 if meta.get("name") == "Unnamed Profile":
                     meta["name"] = display_name
+                if "hotkeys" not in meta:
+                    meta["hotkeys"] = {"play_pause": "f9", "stop": "f10"}
                 return {int(k): v for k, v in data["mappings"].items()}, meta
             else:
                 # Legacy format (just mappings)
@@ -189,6 +195,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.file_paused = False
         self.file_thread = None
         self.live_thread = None
+        self.held_keys = set()
+        self.key_lock = threading.Lock()
+        self.debug_win = None
+        self.debug_text = None
+        self.debug_monitor_var = tk.BooleanVar(value=False)
 
         # Configuration
         self.pin_var = tk.BooleanVar(value=True)
@@ -197,6 +208,13 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.use_target_window = tk.BooleanVar(value=True)
         self.speed_modifier_var = tk.DoubleVar(value=1.0) # New: Speed modifier for file playback
         self.target_window_title = tk.StringVar(value="")
+
+        # Thread-Safe Configuration Mirrors (Updated by UI, Read by Threads)
+        self.safe_speed = 1.0
+        self.safe_use_target = True
+        self.safe_target_title = ""
+        self.safe_jitter = False
+        self.safe_fallback = True
 
         self.current_filename = DEFAULT_FILENAME
         self.key_map, self.current_metadata = load_profile_data(self.current_filename)
@@ -231,6 +249,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.populate_midi_devices()
         self.populate_window_list()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.setup_hotkeys()
         self.toggle_pin()
         self.after(1000, self.check_initial_profile)
 
@@ -306,6 +325,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         top.geometry("320x180")
         top.resizable(False, False)
         top.transient(self)
+        top.attributes("-topmost", True)
         top.grab_set()
         
         # Center on parent
@@ -349,6 +369,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
         ctk.CTkButton(prof_frame, text="Profiles", width=80, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Save Map", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_current_map).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Hotkeys", width=60, height=25, fg_color="#333", hover_color="#444", command=self.open_hotkey_editor).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
 
         fb_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -463,7 +484,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
             from_=0.25, to=4.0, # Range from 0.25x to 4.0x speed
             number_of_steps=15, # Steps for 0.25, 0.5, 0.75, 1.0, ..., 4.0
             variable=self.speed_modifier_var,
-            command=self.update_speed_label,
+            command=self.on_speed_change,
             button_color=COLOR_PRIMARY,
             progress_color=COLOR_PRIMARY
         )
@@ -517,10 +538,53 @@ class MidiKeyTranslatorApp(ctk.CTk):
         footer.grid(row=1, column=0, sticky="ew")
         self.pin_check = ctk.CTkCheckBox(footer, text="Always on Top", variable=self.pin_var, command=self.toggle_pin, font=ctk.CTkFont(size=12), checkmark_color=COLOR_BG, fg_color=COLOR_TEXT_SUB)
         self.pin_check.pack(side="left", padx=20, pady=10)
+        ctk.CTkButton(footer, text="🐞 Debug", width=60, height=24, fg_color="#333", hover_color="#444", font=ctk.CTkFont(size=11), command=self.open_debug_console).pack(side="left", padx=5)
         ctk.CTkButton(footer, text="☕ Donate", width=80, height=24, fg_color="#333", hover_color="#FF5E5B", font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://ko-fi.com/unbutteredbagel")).pack(side="right", padx=20)
 
-    def update_speed_label(self, value):
+    def on_speed_change(self, value):
         self.speed_label.configure(text=f"{value:.2f}x")
+        self.sync_config()
+
+    def on_window_select(self, value):
+        self.sync_config()
+
+    def sync_config(self, _=None):
+        self.safe_speed = self.speed_modifier_var.get()
+        self.safe_use_target = self.use_target_window.get()
+        self.safe_target_title = self.target_window_title.get()
+        self.safe_jitter = self.jitter_var.get()
+        self.safe_fallback = self.fallback_var.get()
+
+    # --- Debugging ---
+    def open_debug_console(self):
+        if self.debug_win is None or not self.debug_win.winfo_exists():
+            self.debug_win = ctk.CTkToplevel(self)
+            self.debug_win.title("Debug Console")
+            self.debug_win.geometry("400x300")
+            self.debug_win.attributes("-topmost", True)
+            self.debug_text = ctk.CTkTextbox(self.debug_win, font=ctk.CTkFont(family="Consolas", size=12))
+            self.debug_text.pack(fill="both", expand=True, padx=5, pady=5)
+            self.debug_text.configure(state="disabled")
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            self.log(f"Debug Console Opened. Admin Mode: {is_admin}")
+            
+            # Add Monitor Checkbox
+            ctk.CTkCheckBox(self.debug_win, text="Monitor Key Input", variable=self.debug_monitor_var, font=ctk.CTkFont(size=12)).pack(pady=5)
+        self.debug_win.lift()
+
+    def log(self, message):
+        timestamp = time.strftime("%H:%M:%S")
+        full_msg = f"[{timestamp}] {message}"
+        print(full_msg)
+        # Schedule UI update on main thread to prevent crashes
+        self.after(0, lambda: self._update_log_ui(full_msg))
+
+    def _update_log_ui(self, full_msg):
+        if self.debug_win is not None and self.debug_win.winfo_exists() and self.debug_text:
+            self.debug_text.configure(state="normal")
+            self.debug_text.insert("end", full_msg + "\n")
+            self.debug_text.see("end")
+            self.debug_text.configure(state="disabled")
 
     # --- Logic ---
 
@@ -574,6 +638,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     def stop_live(self):
         self.live_running = False
+        self.release_all_held_keys()
         self.stop_live_btn.configure(state="disabled")
         self.start_live_btn.configure(state="normal")
         self.device_menu.configure(state="normal")
@@ -590,7 +655,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
                 while self.live_running:
                     for msg in port.iter_pending():
                         if not self.check_can_press(): continue
-                        self.process_msg(msg)
+                        self.process_msg(msg, source='live')
                     time.sleep(0.001)
         except Exception as e:
             print(f"Live Error: {e}")
@@ -606,7 +671,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
             self.btn_play.configure(state="normal", fg_color=COLOR_FILE_GO)
 
     def start_file(self):
+        self.log("Attempting to start file...")
         if not hasattr(self, 'current_midi_file'): return
+
+        # Guard: If already playing (and not paused), ignore to prevent double-threads
+        if self.file_playing and not self.file_paused: return
 
         if self.use_target_window.get():
             target = self.window_dropdown.get()
@@ -614,6 +683,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
                 focus_window_by_title(target)
 
         if self.file_playing and self.file_paused:
+            self.log("Resuming from pause via start_file")
             self.file_paused = False
             self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
             self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
@@ -623,6 +693,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.file_paused = False
         self.file_thread = threading.Thread(target=self.file_loop, args=(self.current_midi_file,), daemon=True)
         self.file_thread.start()
+        self.log(f"File thread started: {self.current_midi_file}")
 
         self.btn_play.configure(state="disabled", fg_color=COLOR_BTN_DISABLED_BG)
         self.btn_pause.configure(state="normal", text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
@@ -630,7 +701,13 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
 
     def pause_file(self):
+        # Logic (Immediate)
+        self.log(f"Pause requested. Current state: Paused={self.file_paused}")
         self.file_paused = not self.file_paused
+        if self.file_paused:
+            self.release_all_held_keys()
+        
+        # UI Updates
         if self.file_paused:
             self.btn_pause.configure(text="▶ Resume", fg_color=COLOR_FILE_GO, text_color="white")
             self.update_status_ui("Paused", "File playback paused", COLOR_WARN)
@@ -639,8 +716,16 @@ class MidiKeyTranslatorApp(ctk.CTk):
             self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
 
     def stop_file(self):
+        # Logic (Immediate)
+        self.log("Stop requested.")
         self.file_playing = False
         self.file_paused = False
+        self.release_all_held_keys()
+        
+        # UI Updates
+        self.update_stop_ui()
+
+    def update_stop_ui(self):
         self.btn_play.configure(state="normal", fg_color=COLOR_FILE_GO)
         self.btn_pause.configure(state="disabled", text="⏸ Pause", fg_color=COLOR_BTN_DISABLED_BG, text_color=COLOR_BTN_DISABLED_TEXT)
         self.btn_stop.configure(state="disabled", fg_color=COLOR_BTN_DISABLED_BG)
@@ -652,25 +737,59 @@ class MidiKeyTranslatorApp(ctk.CTk):
 
     def file_loop(self, filepath):
         try:
+            self.log("File loop running")
             mid = mido.MidiFile(filepath)
             # Iterate over messages to manually control timing for speed modification
             for msg in mid:
                 if not self.file_playing: break
+                
+                # Check pause before waiting
                 while self.file_paused and self.file_playing:
                     time.sleep(0.1)
                 
                 # Manually sleep based on message time and speed modifier
                 if msg.time > 0:
-                    time.sleep(msg.time / self.speed_modifier_var.get())
+                    wait_duration = msg.time / self.safe_speed
+                    start_time = time.time()
+                    
+                    while True:
+                        now = time.time()
+                        elapsed = now - start_time
+                        remaining = wait_duration - elapsed
+                        
+                        if remaining <= 0: break
+                        if not self.file_playing: break
+                        
+                        if self.file_paused:
+                            while self.file_paused and self.file_playing:
+                                time.sleep(0.1)
+                            start_time = time.time()
+                            wait_duration = remaining
+                            continue
+                        
+                        time.sleep(min(0.01, remaining))
 
                 if not self.file_playing: break # Check again in case stop was pressed during sleep
 
                 if not self.check_can_press(): continue
-                self.process_msg(msg)
+                self.process_msg(msg, source='file')
         except Exception as e:
+            self.log(f"File Error: {e}")
             print(f"File Error: {e}")
         finally:
+            self.log("File loop finished")
             self.after(0, self.stop_file)
+
+    def release_all_held_keys(self):
+        with self.key_lock:
+            if not self.held_keys: return
+            keys_to_release = list(self.held_keys)
+            self.held_keys.clear()
+            self.log(f"Releasing keys: {keys_to_release}")
+            
+        for k in keys_to_release:
+            pydirectinput.keyUp(k)
+        self.after(0, lambda: self.update_note_ui(None, False))
 
     # --- Shared Logic ---
     def update_note_ui(self, name, active):
@@ -682,31 +801,49 @@ class MidiKeyTranslatorApp(ctk.CTk):
             self.note_display.configure(text_color=color)
             self.file_note_display.configure(text_color=color)
 
-    def process_msg(self, msg):
+    def process_msg(self, msg, source=None):
         if msg.type == 'note_on' and msg.velocity > 0:
             # Apply a more subtle jitter only to note_on events for a more natural feel
-            if self.jitter_var.get():
+            if self.safe_jitter:
                 time.sleep(max(0, random.gauss(0.005, 0.002))) # 5ms mean, 2ms std dev
 
             name = midi_to_note_name(msg.note)
             self.after(0, lambda: self.update_note_ui(name, True))
             k = self.resolve_key(msg.note)
-            if k: press_keys_for_midi(k, 'down')
+            if k:
+                with self.key_lock:
+                    # Atomic check: Don't press if we just stopped/paused
+                    if source == 'file' and (not self.file_playing or self.file_paused): return
+                    if source == 'live' and not self.live_running: return
+                    
+                    press_keys_for_midi(k, 'down')
+                    self._track_key_internal(k, True)
         elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
             self.after(0, lambda: self.update_note_ui(None, False))
             k = self.resolve_key(msg.note)
-            if k: press_keys_for_midi(k, 'up')
+            if k:
+                with self.key_lock:
+                    press_keys_for_midi(k, 'up')
+                    self._track_key_internal(k, False)
+
+    def _track_key_internal(self, key, is_down):
+        keys = key if isinstance(key, list) else [key]
+        for k in keys:
+            if is_down:
+                self.held_keys.add(k)
+            else:
+                self.held_keys.discard(k)
 
     def check_can_press(self):
-        if not self.use_target_window.get(): return True
-        target = self.window_dropdown.get()
+        if not self.safe_use_target: return True
+        target = self.safe_target_title
         if not target or target == "Select Window": return True
         return get_active_window_title() == target
 
     def resolve_key(self, note):
         key = self.key_map.get(note)
         if key: return key
-        if self.fallback_var.get():
+        if self.safe_fallback:
             return find_fallback_key(note, self.key_map)
         return None
 
@@ -714,9 +851,110 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.attributes("-topmost", self.pin_var.get())
 
     def on_closing(self):
+        if keyboard:
+            keyboard.unhook_all()
+        self.live_running = False # Stop threads before destroying
+        self.release_all_held_keys()
         self.live_running = False
         self.file_playing = False
         self.destroy()
+
+    # --- Hotkey Control ---
+    def setup_hotkeys(self):
+        self.log("Setting up hotkeys (Raw Hook)...")
+        if keyboard:
+            try:
+                keyboard.unhook_all()
+                time.sleep(0.05) # Brief pause to ensure hooks clear
+                keyboard.hook(self.on_key_event)
+                self.log("Global hook registered.")
+            except Exception as e:
+                self.log(f"Warning: Could not set up global hotkeys. Administrator rights might be required. {e}")
+
+    def on_key_event(self, event):
+        if event.event_type == keyboard.KEY_DOWN:
+            key = event.name.lower() if event.name else "unknown"
+            
+            # Debug Monitoring
+            if self.debug_monitor_var.get():
+                self.log(f"Input detected: {key}")
+
+            # Check Configured Hotkeys
+            hk = self.current_metadata.get("hotkeys", {})
+            pp = hk.get("play_pause", "f9").lower()
+            stop = hk.get("stop", "f10").lower()
+
+            if key == pp:
+                self.on_play_pause_hotkey()
+            elif key == stop:
+                self.on_stop_hotkey()
+
+    def on_play_pause_hotkey(self):
+        # Debounce: Prevent rapid firing if key is held
+        if hasattr(self, '_last_pp_time') and time.time() - self._last_pp_time < 0.2:
+            return
+        self._last_pp_time = time.time()
+
+        # Offload logic to thread so hook returns INSTANTLY (prevents hook timeout)
+        threading.Thread(target=self._handle_play_pause_logic, daemon=True).start()
+
+    def _handle_play_pause_logic(self):
+        self.log("Hotkey: Play/Pause pressed")
+        if not hasattr(self, 'current_midi_file') or not self.current_midi_file:
+            self.log("Hotkey ignored: No file selected")
+            return # No file selected
+
+        if not self.file_playing:
+            # CRITICAL: Must use .after() because start_file accesses UI elements (crash if called from thread)
+            self.after(0, self.start_file)
+        else:
+            self.log("Hotkey: Toggling Pause")
+            # Pause/Resume Logic - IMMEDIATE
+            self.file_paused = not self.file_paused
+            if self.file_paused:
+                self.release_all_held_keys()
+            
+            # Schedule UI update
+            self.after(0, self._update_pause_ui_from_hotkey)
+
+    def _update_pause_ui_from_hotkey(self):
+        # Sync UI with the state set in hotkey
+        if self.file_paused:
+            self.btn_pause.configure(text="▶ Resume", fg_color=COLOR_FILE_GO, text_color="white")
+            self.update_status_ui("Paused", "File playback paused", COLOR_WARN)
+        else:
+            self.btn_pause.configure(text="⏸ Pause", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+            self.update_status_ui("Playing File", os.path.basename(self.current_midi_file), COLOR_FILE_GO)
+
+    def on_stop_hotkey(self):
+        # Debounce: Prevent rapid firing if key is held
+        if hasattr(self, '_last_stop_time') and time.time() - self._last_stop_time < 0.2:
+            return
+        self._last_stop_time = time.time()
+
+        # Offload logic to thread so hook returns INSTANTLY
+        threading.Thread(target=self._handle_stop_logic, daemon=True).start()
+
+    def _handle_stop_logic(self):
+        self.log("Hotkey: Stop pressed")
+        # Stop Logic - IMMEDIATE
+        self.file_playing = False
+        self.file_paused = False
+        self.release_all_held_keys()
+        
+        # Schedule UI update
+        self.after(0, self.update_stop_ui)
+
+    def open_hotkey_editor(self):
+        if not keyboard:
+            messagebox.showerror("Error", "The 'keyboard' library is not installed.\nRun: pip install keyboard")
+            return
+        HotkeyEditor(self, self.current_metadata.get("hotkeys", {"play_pause": "f9", "stop": "f10"}), self.update_hotkeys_from_editor)
+
+    def update_hotkeys_from_editor(self, new_hotkeys):
+        self.current_metadata["hotkeys"] = new_hotkeys
+        self.save_current_map()
+        self.setup_hotkeys()
 
     # --- Profile Dialogs ---
     def open_profile_manager(self):
@@ -751,6 +989,7 @@ class ProfileManager(ctk.CTkToplevel):
         self.refresh_callback = refresh_callback
         self.parent = parent
 
+        self.attributes("-topmost", True)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -807,6 +1046,7 @@ class ProfileManager(ctk.CTkToplevel):
         dialog.title(title)
         dialog.geometry("300x250")
         dialog.transient(self)
+        dialog.attributes("-topmost", True)
         dialog.grab_set()
 
         ctk.CTkLabel(dialog, text="Profile Name").pack(pady=(15, 5))
@@ -852,6 +1092,7 @@ class SleekEditor(ctk.CTkToplevel):
         self.title("Keymap Editor")
         self.geometry("400x600")
         self.callback = callback
+        self.attributes("-topmost", True)
         self.temp_map = copy.deepcopy(key_map)
 
         self.grid_columnconfigure(0, weight=1)
@@ -921,6 +1162,7 @@ class SleekKeyCapture(ctk.CTkToplevel):
         self.geometry("300x200")
         self.title("")
         self.result = None
+        self.attributes("-topmost", True)
         self.keys = []
         ctk.CTkLabel(self, text=title, font=ctk.CTkFont(size=14)).pack(pady=(20, 5))
         self.lbl = ctk.CTkLabel(self, text="...", font=ctk.CTkFont(size=24, weight="bold"), text_color=COLOR_PRIMARY)
@@ -947,6 +1189,65 @@ class SleekKeyCapture(ctk.CTkToplevel):
         self.destroy()
     def do_save(self):
         self.result = self.keys
+        self.destroy()
+
+class HotkeyEditor(ctk.CTkToplevel):
+    def __init__(self, parent, current_hotkeys, callback):
+        super().__init__(parent)
+        self.title("Global Hotkeys")
+        self.geometry("350x250")
+        self.callback = callback
+        self.attributes("-topmost", True)
+        self.hotkeys = current_hotkeys.copy()
+        self.capturing = False
+        
+        self.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(self, text="Global Media Controls", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(20, 15))
+        
+        self.btn_pp = self.create_row("Play / Pause", "play_pause")
+        self.btn_stop = self.create_row("Stop Playback", "stop")
+        
+        ctk.CTkButton(self, text="Save & Close", command=self.save, fg_color=COLOR_LIVE_GO).pack(pady=20)
+        self.grab_set()
+        
+    def create_row(self, label, key_key):
+        f = ctk.CTkFrame(self, fg_color="transparent")
+        f.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(f, text=label).pack(side="left")
+        btn = ctk.CTkButton(f, text=self.hotkeys.get(key_key, "None"), width=120, 
+                            command=lambda: self.start_capture(key_key))
+        btn.pack(side="right")
+        return btn
+
+    def start_capture(self, key_key):
+        if self.capturing: return
+        self.capturing = True
+        
+        btn = self.btn_pp if key_key == "play_pause" else self.btn_stop
+        btn.configure(text="Press key...", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+        
+        threading.Thread(target=self.capture_thread, args=(key_key, btn), daemon=True).start()
+
+    def capture_thread(self, key_key, btn):
+        try:
+            time.sleep(0.2) # Debounce click
+            hk = keyboard.read_hotkey(suppress=True)
+            self.after(0, lambda: self.finish_capture(key_key, btn, hk))
+        except Exception as e:
+            print(f"Capture failed: {e}")
+            self.after(0, self.cancel_capture)
+
+    def cancel_capture(self):
+        self.capturing = False
+
+    def finish_capture(self, key_key, btn, hotkey):
+        self.hotkeys[key_key] = hotkey
+        btn.configure(text=hotkey, fg_color=COLOR_PRIMARY, text_color="white")
+        self.capturing = False
+
+    def save(self):
+        self.callback(self.hotkeys)
         self.destroy()
 
 if __name__ == "__main__":
