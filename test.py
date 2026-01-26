@@ -281,12 +281,14 @@ class MidiKeyTranslatorApp(ctk.CTk):
         header.grid(row=0, column=0, pady=(20, 10), sticky="ew")
         ctk.CTkLabel(header, text="MIDI Keybind Pro", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold")).pack()
         ctk.CTkLabel(header, text="Universal MIDI Input Translator", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
+        ctk.CTkLabel(header, text="Turn your Piano into a Keyboard", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
 
         if not ctypes.windll.shell32.IsUserAnAdmin():
             admin_frame = ctk.CTkFrame(header, fg_color="transparent")
             admin_frame.pack(pady=(5, 0))
             ctk.CTkButton(admin_frame, text="🛡️ Run as Admin", width=120, height=24, fg_color="#333", hover_color="#444", command=self.restart_as_admin).pack(side="left", padx=5)
             self.create_info_btn(admin_frame, "Administrator Privileges", "Required for some games (e.g., Genshin Impact, Valorant) that block simulated input from non-admin programs.").pack(side="left")
+            self.create_info_btn(admin_frame, "Administrator Privileges", "Needed for games with anti-cheat (Valorant, Genshin, etc).").pack(side="left")
 
     def create_info_btn(self, parent, title, message):
         return ctk.CTkButton(parent, text="?", width=20, height=20, corner_radius=10,
@@ -323,9 +325,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
         text_frame.grid(row=0, column=1, sticky="w", pady=15)
 
         self.status_main = ctk.CTkLabel(text_frame, text="Inactive", font=ctk.CTkFont(size=18, weight="bold"), anchor="w")
+        self.status_main = ctk.CTkLabel(text_frame, text="Standby", font=ctk.CTkFont(size=18, weight="bold"), anchor="w")
         self.status_main.pack(anchor="w")
 
         self.status_sub = ctk.CTkLabel(text_frame, text="Select a device or file to begin", font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_SUB, anchor="w")
+        self.status_sub = ctk.CTkLabel(text_frame, text="Waiting for input...", font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_SUB, anchor="w")
         self.status_sub.pack(anchor="w")
 
     def build_config_card(self):
@@ -342,21 +346,26 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.profile_lbl.pack(side="left", fill="x", expand=True)
 
         ctk.CTkButton(prof_frame, text="Manage Profiles", width=100, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
+        ctk.CTkButton(prof_frame, text="Profiles", width=80, height=25, fg_color="#333", hover_color="#444", command=self.open_profile_manager).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Save Map", width=60, height=25, fg_color="#333", hover_color="#444", command=self.save_current_map).pack(side="right", padx=2)
         ctk.CTkButton(prof_frame, text="Edit Map", width=80, height=25, fg_color=COLOR_PRIMARY, command=self.open_editor).pack(side="right", padx=10)
 
         fb_frame = ctk.CTkFrame(card, fg_color="transparent")
         fb_frame.grid(row=2, column=0, padx=20, pady=10, sticky="w")
         self.fallback_switch = ctk.CTkSwitch(fb_frame, text="Smart Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
+        self.fallback_switch = ctk.CTkSwitch(fb_frame, text="Octave Fallback", variable=self.fallback_var, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.fallback_switch.pack(side="left")
         self.create_info_btn(fb_frame, "Smart Octave Fallback", "If a note is not mapped, this attempts to find the same note in a different octave that IS mapped.").pack(side="left", padx=10)
+        self.create_info_btn(fb_frame, "Octave Fallback", "Plays the nearest mapped octave if a note is missing.").pack(side="left", padx=10)
 
         target_frame = ctk.CTkFrame(card, fg_color="transparent")
         target_frame.grid(row=3, column=0, padx=20, pady=(5, 15), sticky="ew")
 
         self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
+        self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Lock", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.target_switch.pack(side="left")
         self.create_info_btn(target_frame, "Focus Protection", "When enabled, keys will ONLY be pressed if the selected window is currently active (in the foreground).").pack(side="left", padx=5)
+        self.create_info_btn(target_frame, "Focus Lock", "Stops typing if you tab out of the game.").pack(side="left", padx=5)
 
         ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#333", hover_color="#444").pack(side="right")
         self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150, fg_color="#333", button_color="#444")
@@ -371,6 +380,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         head = ctk.CTkFrame(card, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(head, text="LIVE INPUT", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
+        ctk.CTkLabel(head, text="LIVE MIDI", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
 
         self.live_dot = ctk.CTkLabel(head, text="●", font=ctk.CTkFont(size=16), text_color=COLOR_BTN_DISABLED_TEXT)
         self.live_dot.pack(side="right")
@@ -427,6 +437,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         head = ctk.CTkFrame(card, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
         ctk.CTkLabel(head, text="MIDI FILE PLAYER", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
+        ctk.CTkLabel(head, text="AUTO PLAYER", font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_TEXT_SUB).pack(side="left")
         self.file_note_display = ctk.CTkLabel(head, text="--", font=ctk.CTkFont(family="Consolas", size=14, weight="bold"), text_color=COLOR_TEXT_SUB, width=50)
         self.file_note_display.pack(side="right")
 
@@ -709,6 +720,8 @@ class ProfileManager(ctk.CTkToplevel):
         top_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=15)
         ctk.CTkLabel(top_frame, text="Configuration Profiles", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
         ctk.CTkButton(top_frame, text="+ Create New", width=100, fg_color=COLOR_LIVE_GO, command=self.create_new).pack(side="right")
+        ctk.CTkLabel(top_frame, text="Profiles", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        ctk.CTkButton(top_frame, text="+ New", width=80, fg_color=COLOR_LIVE_GO, command=self.create_new).pack(side="right")
 
         # List
         self.scroll = ctk.CTkScrollableFrame(self, fg_color="#222")
@@ -736,6 +749,7 @@ class ProfileManager(ctk.CTkToplevel):
                 ctk.CTkLabel(info_frame, text=f"🔗 Auto-switch: {link}", font=ctk.CTkFont(size=11), text_color=COLOR_PRIMARY).pack(anchor="w")
             else:
                 ctk.CTkLabel(info_frame, text="No auto-switch linked", font=ctk.CTkFont(size=11), text_color="#666").pack(anchor="w")
+                ctk.CTkLabel(info_frame, text="Manual switch only", font=ctk.CTkFont(size=11), text_color="#666").pack(anchor="w")
 
             ctk.CTkButton(row, text="Load", width=50, height=24, fg_color="#444", hover_color=COLOR_PRIMARY, command=lambda f=prof["filename"]: self.do_load(f)).pack(side="right", padx=5)
             ctk.CTkButton(row, text="⚙", width=30, height=24, fg_color="transparent", border_width=1, border_color="#555", command=lambda p=prof: self.edit_meta(p)).pack(side="right", padx=5)
