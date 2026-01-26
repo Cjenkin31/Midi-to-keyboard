@@ -232,7 +232,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.populate_window_list()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.toggle_pin()
-        self.after(1000, self.auto_switch_loop)
+        self.after(1000, self.check_initial_profile)
 
     def extract_bundled_configs(self):
         """Extracts bundled JSON files to the local directory so they are visible in dialogs."""
@@ -258,16 +258,18 @@ class MidiKeyTranslatorApp(ctk.CTk):
         except Exception as e:
             print(f"Scan error: {e}")
 
-    def auto_switch_loop(self):
-        """Checks active window and switches profile if a link is found."""
-        active = get_active_window_title()
-        if active:
-            for prof in self.profile_cache:
-                link = prof["metadata"].get("linked_window", "")
-                if link and link.lower() in active.lower() and prof["filename"] != self.current_filename:
+    def check_initial_profile(self):
+        """Checks running programs on startup and loads profile if linked window exists."""
+        open_windows = get_open_windows()
+        open_windows_lower = [w.lower() for w in open_windows]
+
+        for prof in self.profile_cache:
+            link = prof["metadata"].get("linked_window", "")
+            if link:
+                link_lower = link.lower()
+                if any(link_lower in w for w in open_windows_lower) and prof["filename"] != self.current_filename:
                     self.load_profile(prof["filename"])
                     break
-        self.after(1500, self.auto_switch_loop)
 
     def restart_as_admin(self):
         try:
