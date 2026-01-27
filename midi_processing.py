@@ -2,7 +2,6 @@ import mido
 import time
 import random
 import pydirectinput
-from utils import check_can_press, press_keys_for_midi, resolve_key, get_active_window_title
 
 def live_loop(app, device):
     try:

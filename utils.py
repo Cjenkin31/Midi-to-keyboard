@@ -49,15 +49,7 @@ def focus_window_by_title(title):
 # --- Logic Helpers ---
 def create_default_88_key_map():
     return {
-        24: "right", 25: "up", 26: "down", 27: "left", 28: "shiftright",
-        29: "/", 30: ".", 31: ",", 32: "l", 33: ";", 34: "'",
-        35: "]", 36: "[", 37: "p", 38: "o", 39: "-", 40: "=",
-        41: "0", 42: "9", 43: "ctrlleft", 44: "shiftleft", 45: "`",
-        46: "2", 47: "5", 48: "q", 49: "s", 50: "x", 51: "d",
-        52: "c", 53: "v", 54: "g", 55: "b", 56: "h", 57: "n",
-        58: "j", 59: "m", 60: "w", 61: "3", 62: "e", 63: "4",
-        64: "r", 65: "t", 66: "6", 67: "y", 68: "7", 69: "u",
-        70: "8", 71: "i", 72: "k", 73: "altleft"
+        21: "a", 22: "w", 23: "s", 24: "d", 25: "e", 26: "f", 27: "t", 28: "g", 29: "y", 30: "h", 31: "u", 32: "j", 33: "i", 34: "k", 35: "o", 36: "l", 37: "p", 38: ";", 39: "'", 40: "z", 41: "x", 42: "c", 43: "v", 44: "b", 45: "n", 46: "m", 47: ",", 48: ".", 49: "/", 50: "space", 51: "enter", 52: "up", 53: "down", 54: "left", 55: "right", 56: "shift", 57: "ctrl", 58: "alt", 59: "tab", 60: "esc", 61: "1", 62: "2", 63: "3", 64: "4", 65: "5", 66: "6", 71: "7", 72: "8", 73: "9", 74: "0", 75: "q"
     }
 
 def midi_to_note_name(note_number):
@@ -88,13 +80,15 @@ def load_profile_data(filename):
         with open(target_path, 'r') as f:
             data = json.load(f)
             # Check for new format with metadata
-            if "metadata" in data and "mappings" in data:
+            if "metadata" in data:
                 meta = data["metadata"]
                 if meta.get("name") == "Unnamed Profile":
                     meta["name"] = display_name
                 if "hotkeys" not in meta:
                     meta["hotkeys"] = {"play_pause": "f9", "stop": "f10"}
-                return {int(k): v for k, v in data["mappings"].items()}, meta
+                
+                mappings = {int(k): v for k, v in data["mappings"].items()} if "mappings" in data else create_default_88_key_map()
+                return mappings, meta
             else:
                 # Legacy format (just mappings)
                 return {int(k): v for k, v in data.items()}, default_meta
@@ -122,4 +116,4 @@ def find_fallback_key(note, key_map):
     candidates = [k for k in key_map if k % 12 == target_pitch_class]
     if not candidates: return None
     closest_note = min(candidates, key=lambda x: abs(x - note))
-    return key_map[closest_note]
+    return key_map.get(closest_note)

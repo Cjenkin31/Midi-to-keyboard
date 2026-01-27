@@ -106,12 +106,15 @@ class ProfileManager(ctk.CTkToplevel):
             if is_new:
                 safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip()
                 filename = f"{safe_name.replace(' ', '_')}.json"
-                mappings, _ = create_default_88_key_map(), {"name": name, "linked_window": link}
+                mappings = create_default_88_key_map()
+                metadata = {"name": name, "linked_window": link, "hotkeys": {"play_pause": "f9", "stop": "f10"}}
             else:
                 filename = profile_data["filename"]
-                mappings, _ = load_profile_data(filename)
+                mappings, metadata = load_profile_data(filename)
+                metadata["name"] = name
+                metadata["linked_window"] = link
 
-            save_profile_data(filename, mappings, {"name": name, "linked_window": link})
+            save_profile_data(filename, mappings, metadata)
             self.refresh_callback() # Refresh parent cache
             self.profiles = self.parent.profile_cache # Update local list
             self.populate_list()

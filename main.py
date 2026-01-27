@@ -637,7 +637,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         key = self.key_map.get(note)
         if key: return key
         if self.safe_fallback:
-            return find_fallback_key(self.key_map, note)
+            return find_fallback_key(note, self.key_map)
         return None
 
     def toggle_pin(self):
