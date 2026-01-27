@@ -252,6 +252,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.setup_hotkeys()
         self.toggle_pin()
         self.after(1000, self.check_initial_profile)
+        self.after(200, self.check_disclaimer)
 
     def extract_bundled_configs(self):
         """Extracts bundled JSON files to the local directory so they are visible in dialogs."""
@@ -289,6 +290,53 @@ class MidiKeyTranslatorApp(ctk.CTk):
                 if any(link_lower in w for w in open_windows_lower) and prof["filename"] != self.current_filename:
                     self.load_profile(prof["filename"])
                     break
+
+    def check_disclaimer(self):
+        marker_file = "eula_accepted"
+        if os.path.exists(marker_file):
+            return
+
+        # Create custom dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Welcome!")
+        dialog.geometry("420x340")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center logic
+        try:
+            x = self.winfo_x() + (self.winfo_width() // 2) - 210
+            y = self.winfo_y() + (self.winfo_height() // 2) - 170
+            dialog.geometry(f"+{x}+{y}")
+        except:
+            pass
+
+        # Content
+        title_font = ctk.CTkFont(size=18, weight="bold")
+        body_font = ctk.CTkFont(size=13)
+
+        ctk.CTkLabel(dialog, text="Welcome to MIDI Keybind Pro! 🎹", font=title_font, text_color=COLOR_PRIMARY).pack(pady=(25, 15))
+        
+        msg = ("We hope you enjoy turning your instrument into a controller!\n\n"
+               "Just a friendly heads-up: This tool works by simulating keyboard presses. "
+               "While we've built it to be safe, some online games have strict rules about automation.\n\n"
+               "Please use this tool responsibly. We want you to have fun, but we can't take "
+               "responsibility for any account actions that might occur in third-party games.\n\n"
+               "Play safe and have fun!")
+        
+        ctk.CTkLabel(dialog, text=msg, font=body_font, wraplength=360, justify="left", text_color="#DDDDDD").pack(pady=10, padx=20)
+
+        def on_accept():
+            try:
+                with open(marker_file, "w") as f:
+                    f.write("accepted")
+            except Exception:
+                pass
+            dialog.destroy()
+
+        ctk.CTkButton(dialog, text="I Understand, Let's Play!", command=on_accept, fg_color=COLOR_LIVE_GO, width=200).pack(pady=20)
 
     def restart_as_admin(self):
         try:
@@ -538,7 +586,6 @@ class MidiKeyTranslatorApp(ctk.CTk):
         footer.grid(row=1, column=0, sticky="ew")
         self.pin_check = ctk.CTkCheckBox(footer, text="Always on Top", variable=self.pin_var, command=self.toggle_pin, font=ctk.CTkFont(size=12), checkmark_color=COLOR_BG, fg_color=COLOR_TEXT_SUB)
         self.pin_check.pack(side="left", padx=20, pady=10)
-        ctk.CTkButton(footer, text="🐞 Debug", width=60, height=24, fg_color="#333", hover_color="#444", font=ctk.CTkFont(size=11), command=self.open_debug_console).pack(side="left", padx=5)
         ctk.CTkButton(footer, text="☕ Donate", width=80, height=24, fg_color="#333", hover_color="#FF5E5B", font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://ko-fi.com/unbutteredbagel")).pack(side="right", padx=20)
 
     def on_speed_change(self, value):
