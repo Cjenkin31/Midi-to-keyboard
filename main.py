@@ -66,6 +66,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.use_target_window = tk.BooleanVar(value=True)
         self.speed_modifier_var = tk.DoubleVar(value=1.0)
         self.target_window_title = tk.StringVar(value="")
+        self.transpose_var = tk.IntVar(value=0)
 
         self.safe_speed = 1.0
         self.safe_use_target = True
@@ -274,6 +275,17 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.target_switch = ctk.CTkSwitch(target_frame, text="Focus Protection", variable=self.use_target_window, button_color=COLOR_PRIMARY, progress_color=COLOR_PRIMARY)
         self.target_switch.pack(side="left")
         self.create_info_btn(target_frame, "Focus Protection", "When enabled, keys will ONLY be pressed if the selected window is currently active (in the foreground).").pack(side="left", padx=5)
+
+        # Transpose Control
+        trans_frame = ctk.CTkFrame(card, fg_color="transparent")
+        trans_frame.grid(row=5, column=0, padx=20, pady=(0, 15), sticky="ew")
+        
+        ctk.CTkLabel(trans_frame, text="Transpose:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        ctk.CTkButton(trans_frame, text="-", width=30, height=24, command=lambda: self.change_transpose(-1)).pack(side="left", padx=(10, 5))
+        self.transpose_lbl = ctk.CTkLabel(trans_frame, text="0", width=30, font=ctk.CTkFont(family="Consolas", weight="bold"))
+        self.transpose_lbl.pack(side="left")
+        ctk.CTkButton(trans_frame, text="+", width=30, height=24, command=lambda: self.change_transpose(1)).pack(side="left", padx=5)
+        self.create_info_btn(trans_frame, "Transposition", "Shifts all incoming notes up or down by semitones.\nHotkeys can be configured in settings.").pack(side="left", padx=10)
 
         ctk.CTkButton(target_frame, text="↻", width=30, height=25, command=self.populate_window_list, fg_color="#333", hover_color="#444").pack(side="right")
         self.window_dropdown = ctk.CTkOptionMenu(target_frame, variable=self.target_window_title, dynamic_resizing=False, width=150, fg_color="#333", button_color="#444")
@@ -601,9 +613,13 @@ class MidiKeyTranslatorApp(ctk.CTk):
             if self.safe_jitter:
                 time.sleep(max(0, random.gauss(0.005, 0.002)))
 
-            name = midi_to_note_name(msg.note)
+            # Apply transposition
+            note_val = msg.note + self.transpose_var.get()
+            if not (0 <= note_val <= 127): return
+
+            name = midi_to_note_name(note_val)
             self.after(0, lambda: self.update_note_ui(name, True))
-            k = self.resolve_key(msg.note)
+            k = self.resolve_key(note_val)
             if k:
                 with self.key_lock:
                     if source == 'file' and (not self.file_playing or self.file_paused): return
@@ -612,8 +628,11 @@ class MidiKeyTranslatorApp(ctk.CTk):
                     press_keys_for_midi(k, 'down')
                     self._track_key_internal(k, True)
         elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+            note_val = msg.note + self.transpose_var.get()
+            if not (0 <= note_val <= 127): return
+
             self.after(0, lambda: self.update_note_ui(None, False))
-            k = self.resolve_key(msg.note)
+            k = self.resolve_key(note_val)
             if k:
                 with self.key_lock:
                     press_keys_for_midi(k, 'up')
@@ -673,11 +692,17 @@ class MidiKeyTranslatorApp(ctk.CTk):
             hk = self.current_metadata.get("hotkeys", {})
             pp = hk.get("play_pause", "f9").lower()
             stop = hk.get("stop", "f10").lower()
+            t_up = hk.get("transpose_up", "page up").lower()
+            t_down = hk.get("transpose_down", "page down").lower()
 
             if key == pp:
                 self.on_play_pause_hotkey()
             elif key == stop:
                 self.on_stop_hotkey()
+            elif key == t_up:
+                self.change_transpose(1)
+            elif key == t_down:
+                self.change_transpose(-1)
 
     def on_play_pause_hotkey(self):
         if hasattr(self, '_last_pp_time') and time.time() - self._last_pp_time < 0.2:
@@ -724,6 +749,16 @@ class MidiKeyTranslatorApp(ctk.CTk):
         release_all_held_keys(self)
         
         self.after(0, self.update_stop_ui)
+
+    def change_transpose(self, delta):
+        new_val = self.transpose_var.get() + delta
+        self.transpose_var.set(new_val)
+        
+        if hasattr(self, 'transpose_lbl'):
+            prefix = "+" if new_val > 0 else ""
+            self.transpose_lbl.configure(text=f"{prefix}{new_val}")
+            
+        release_all_held_keys(self)
 
     def open_hotkey_editor(self):
         if not keyboard:

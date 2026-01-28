@@ -74,7 +74,7 @@ def load_profile_data(filename):
     
     # Default name derived from filename
     display_name = os.path.splitext(os.path.basename(filename))[0].replace("_", " ").title()
-    default_meta = {"name": display_name, "linked_window": "", "hotkeys": {"play_pause": "f9", "stop": "f10"}}
+    default_meta = {"name": display_name, "linked_window": "", "hotkeys": {"play_pause": "f9", "stop": "f10", "transpose_up": "page up", "transpose_down": "page down"}}
     
     try:
         with open(target_path, 'r') as f:
@@ -85,14 +85,18 @@ def load_profile_data(filename):
                 if meta.get("name") == "Unnamed Profile":
                     meta["name"] = display_name
                 if "hotkeys" not in meta:
-                    meta["hotkeys"] = {"play_pause": "f9", "stop": "f10"}
+                    meta["hotkeys"] = default_meta["hotkeys"]
+                
+                # Ensure new keys exist in old profiles
+                for k, v in [("transpose_up", "page up"), ("transpose_down", "page down")]:
+                    if k not in meta["hotkeys"]: meta["hotkeys"][k] = v
                 
                 mappings = {int(k): v for k, v in data["mappings"].items()} if "mappings" in data else create_default_88_key_map()
                 return mappings, meta
             else:
                 # Legacy format (just mappings)
                 return {int(k): v for k, v in data.items()}, default_meta
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
         return create_default_88_key_map(), default_meta
 
 def save_profile_data(filename, key_map, metadata):

@@ -232,7 +232,7 @@ class HotkeyEditor(ctk.CTkToplevel):
     def __init__(self, parent, current_hotkeys, callback):
         super().__init__(parent)
         self.title("Global Hotkeys")
-        self.geometry("350x250")
+        self.geometry("350x380")
         self.callback = callback
         self.attributes("-topmost", True)
         self.hotkeys = current_hotkeys.copy()
@@ -244,6 +244,8 @@ class HotkeyEditor(ctk.CTkToplevel):
         
         self.btn_pp = self.create_row("Play / Pause", "play_pause")
         self.btn_stop = self.create_row("Stop Playback", "stop")
+        self.btn_t_up = self.create_row("Transpose Up", "transpose_up")
+        self.btn_t_down = self.create_row("Transpose Down", "transpose_down")
         
         ctk.CTkButton(self, text="Save & Close", command=self.save, fg_color=COLOR_LIVE_GO).pack(pady=20)
         self.grab_set()
@@ -261,10 +263,15 @@ class HotkeyEditor(ctk.CTkToplevel):
         if self.capturing: return
         self.capturing = True
         
-        btn = self.btn_pp if key_key == "play_pause" else self.btn_stop
-        btn.configure(text="Press key...", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+        btn = None
+        if key_key == "play_pause": btn = self.btn_pp
+        elif key_key == "stop": btn = self.btn_stop
+        elif key_key == "transpose_up": btn = self.btn_t_up
+        elif key_key == "transpose_down": btn = self.btn_t_down
         
-        threading.Thread(target=self.capture_thread, args=(key_key, btn), daemon=True).start()
+        if btn:
+            btn.configure(text="Press key...", fg_color=COLOR_WARN, text_color=COLOR_TEXT_ON_WARN)
+            threading.Thread(target=self.capture_thread, args=(key_key, btn), daemon=True).start()
 
     def capture_thread(self, key_key, btn):
         try:
