@@ -193,11 +193,13 @@ class MidiKeyTranslatorApp(ctk.CTk):
         ctk.CTkLabel(header, text="Universal MIDI Input Translator", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
         ctk.CTkLabel(header, text="Turn your Piano into a Keyboard", font=ctk.CTkFont(size=12), text_color=COLOR_TEXT_SUB).pack()
 
+        ctrl_frame = ctk.CTkFrame(header, fg_color="transparent")
+        ctrl_frame.pack(pady=(5, 0))
+        ctk.CTkButton(ctrl_frame, text="🎨 Theme", width=80, height=24, fg_color="#333", hover_color="#444", font=ctk.CTkFont(size=11), command=self.open_theme_editor).pack(side="left", padx=5)
+
         if not ctypes.windll.shell32.IsUserAnAdmin():
-            admin_frame = ctk.CTkFrame(header, fg_color="transparent")
-            admin_frame.pack(pady=(5, 0))
-            ctk.CTkButton(admin_frame, text="🛡️ Run as Admin", width=120, height=24, fg_color="#333", hover_color="#444", command=self.restart_as_admin).pack(side="left", padx=5)
-            self.create_info_btn(admin_frame, "Administrator Privileges", "Required for some games (e.g., Genshin Impact, Valorant) that block simulated input from non-admin programs.").pack(side="left")
+            ctk.CTkButton(ctrl_frame, text="🛡️ Run as Admin", width=120, height=24, fg_color="#333", hover_color="#444", command=self.restart_as_admin).pack(side="left", padx=5)
+            self.create_info_btn(ctrl_frame, "Administrator Privileges", "Required for some games (e.g., Genshin Impact, Valorant) that block simulated input from non-admin programs.").pack(side="left")
 
     def create_info_btn(self, parent, title, message):
         return ctk.CTkButton(parent, text="?", width=20, height=20, corner_radius=10,
@@ -790,6 +792,19 @@ class MidiKeyTranslatorApp(ctk.CTk):
     def update_key_map(self, new_map):
         self.key_map = new_map
         save_profile_data(self.current_filename, self.key_map, self.current_metadata)
+
+    def open_theme_editor(self):
+        ThemeEditor(self, self.restart_app)
+
+    def restart_app(self):
+        try:
+            if getattr(sys, 'frozen', False):
+                os.execl(sys.executable, sys.executable, *sys.argv[1:])
+            else:
+                os.execl(sys.executable, sys.executable, *sys.argv)
+        except Exception as e:
+            print(f"Restart failed: {e}")
+            self.destroy()
 
 if __name__ == "__main__":
     pydirectinput.PAUSE = 0

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, colorchooser
 import copy
 import threading
 import time
@@ -293,3 +293,149 @@ class HotkeyEditor(ctk.CTkToplevel):
     def save(self):
         self.callback(self.hotkeys)
         self.destroy()
+
+class ThemeEditor(ctk.CTkToplevel):
+    def __init__(self, parent, restart_callback):
+        super().__init__(parent)
+        self.title("Theme Editor")
+        self.geometry("700x600")
+        self.restart_callback = restart_callback
+        self.attributes("-topmost", True)
+        
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # Left sidebar: Theme List
+        left_panel = ctk.CTkFrame(self, width=200, corner_radius=0)
+        left_panel.grid(row=0, column=0, sticky="nsew")
+        
+        ctk.CTkLabel(left_panel, text="Themes", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        
+        self.theme_listbox = tk.Listbox(left_panel, bg="#2b2b2b", fg="white", borderwidth=0, highlightthickness=0)
+        self.theme_listbox.pack(fill="both", expand=True, padx=10, pady=5)
+        self.theme_listbox.bind("<<ListboxSelect>>", self.on_theme_select)
+        
+        btn_frame = ctk.CTkFrame(left_panel, fg_color="transparent")
+        btn_frame.pack(pady=10, fill="x", padx=10)
+        ctk.CTkButton(btn_frame, text="+ New", width=60, command=self.new_theme, fg_color=COLOR_LIVE_GO).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="- Del", width=60, command=self.delete_theme, fg_color=COLOR_DANGER).pack(side="right", padx=2)
+
+        # Right panel: Editor
+        self.right_panel = ctk.CTkScrollableFrame(self, corner_radius=0)
+        self.right_panel.grid(row=0, column=1, sticky="nsew")
+        
+        self.name_var = tk.StringVar()
+        ctk.CTkLabel(self.right_panel, text="Theme Name").pack(anchor="w", padx=20, pady=(20, 5))
+        self.name_entry = ctk.CTkEntry(self.right_panel, textvariable=self.name_var)
+        self.name_entry.pack(fill="x", padx=20, pady=5)
+        
+        self.colors_frame = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        self.colors_frame.pack(fill="x", padx=20, pady=10)
+        
+        self.color_vars = {}
+        self.color_buttons = {}
+        
+        self.keys_to_edit = [
+            ("Background", "BG"), ("Card Background", "CARD"), ("Primary Accent", "PRIMARY"),
+            ("Success / Go", "LIVE_GO"), ("File / Info", "FILE_GO"), ("Danger / Stop", "DANGER"),
+            ("Warning", "WARN"), ("Main Text", "TEXT_MAIN"), ("Sub Text", "TEXT_SUB"),
+            ("Text on Warning", "TEXT_ON_WARN"), ("Disabled Btn BG", "BTN_DISABLED_BG"),
+            ("Disabled Btn Text", "BTN_DISABLED_TEXT")
+        ]
+        
+        for label, key in self.keys_to_edit:
+            row = ctk.CTkFrame(self.colors_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=label, width=120, anchor="w").pack(side="left")
+            var = tk.StringVar()
+            self.color_vars[key] = var
+            entry = ctk.CTkEntry(row, textvariable=var, width=100)
+            entry.pack(side="left", padx=5)
+            btn = ctk.CTkButton(row, text="", width=30, height=20, command=lambda k=key, v=var: self.pick_color(k, v))
+            btn.pack(side="left", padx=5)
+            self.color_buttons[key] = btn
+            var.trace_add("write", lambda *args, k=key, v=var: self.update_btn_color(k, v))
+
+        # Bottom Action Bar
+        action_bar = ctk.CTkFrame(self, height=60, fg_color="#1a1a1a")
+        action_bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+        
+        ctk.CTkButton(action_bar, text="Apply & Restart", command=self.apply_theme, fg_color=COLOR_PRIMARY).pack(side="right", padx=20, pady=15)
+        ctk.CTkButton(action_bar, text="Save Changes", command=self.save_theme, fg_color="#444").pack(side="right", padx=5, pady=15)
+
+        self.populate_list()
+        try:
+            idx = list(THEMES.keys()).index(CURRENT_THEME_NAME)
+            self.theme_listbox.selection_set(idx)
+            self.on_theme_select(None)
+        except: pass
+
+    def populate_list(self):
+        self.theme_listbox.delete(0, "end")
+        for t in THEMES: self.theme_listbox.insert("end", t)
+
+    def on_theme_select(self, event):
+        sel = self.theme_listbox.curselection()
+        if not sel: return
+        name = self.theme_listbox.get(sel[0])
+        self.load_theme_into_ui(name)
+
+    def load_theme_into_ui(self, name):
+        self.name_var.set(name)
+        theme_data = THEMES.get(name, {})
+        for key, var in self.color_vars.items():
+            val = theme_data.get(key, "#000000")
+            var.set(val)
+            self.update_btn_color(key, var)
+
+    def update_btn_color(self, key, var):
+        try: self.color_buttons[key].configure(fg_color=var.get())
+        except: pass
+
+    def pick_color(self, key, var):
+        color = colorchooser.askcolor(initialcolor=var.get())[1]
+        if color: var.set(color)
+
+    def new_theme(self):
+        base = THEMES.get("Default", {}).copy()
+        name = "New Theme"
+        cnt = 1
+        while name in THEMES:
+            name = f"New Theme {cnt}"
+            cnt += 1
+        THEMES[name] = base
+        self.populate_list()
+        self.theme_listbox.selection_clear(0, "end")
+        self.theme_listbox.selection_set("end")
+        self.load_theme_into_ui(name)
+
+    def delete_theme(self):
+        name = self.name_var.get()
+        if name in DEFAULT_THEMES: return messagebox.showerror("Error", "Cannot delete built-in themes.")
+        if name in THEMES:
+            del THEMES[name]
+            self.populate_list()
+            self.load_theme_into_ui("Default")
+
+    def save_theme(self):
+        name = self.name_var.get()
+        if not name: return
+        new_data = {key: var.get() for key, var in self.color_vars.items()}
+        THEMES[name] = new_data
+        self.write_config(current_theme=CURRENT_THEME_NAME)
+        self.populate_list()
+        messagebox.showinfo("Saved", f"Theme '{name}' saved.")
+
+    def apply_theme(self):
+        name = self.name_var.get()
+        self.save_theme()
+        self.write_config(current_theme=name)
+        if messagebox.askyesno("Restart Required", "Restart now to apply theme?"):
+            self.restart_callback()
+
+    def write_config(self, current_theme):
+        custom = {k: v for k, v in THEMES.items() if k not in DEFAULT_THEMES}
+        data = {"theme": current_theme, "custom_themes": custom}
+        try:
+            with open(THEME_FILE, 'w') as f: json.dump(data, f, indent=4)
+        except Exception as e: messagebox.showerror("Error", f"Could not save config: {e}")
