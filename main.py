@@ -366,7 +366,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         ctk.CTkButton(file_frame, text="Select File", width=80, command=self.select_file, fg_color="#333", hover_color="#444").pack(side="right")
 
         speed_frame = ctk.CTkFrame(card, fg_color="transparent")
-        speed_frame.grid(row=2, column=0, padx=20, pady=(5, 10), sticky="ew")
+        speed_frame.grid(row=2, column=0, padx=20, pady=(5, 0), sticky="ew")
         speed_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(speed_frame, text="Playback Speed:", font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w")
@@ -374,7 +374,7 @@ class MidiKeyTranslatorApp(ctk.CTk):
         self.speed_slider = ctk.CTkSlider(
             speed_frame,
             from_=0.25, to=4.0,
-            number_of_steps=15,
+            number_of_steps=375,
             variable=self.speed_modifier_var,
             command=self.on_speed_change,
             button_color=COLOR_PRIMARY,
@@ -382,11 +382,26 @@ class MidiKeyTranslatorApp(ctk.CTk):
         )
         self.speed_slider.grid(row=0, column=1, padx=(10, 0), sticky="ew")
 
-        self.speed_label = ctk.CTkLabel(speed_frame, text="1.00x", font=ctk.CTkFont(size=12, weight="bold"))
-        self.speed_label.grid(row=0, column=2, padx=(10, 0), sticky="e")
+        self.speed_entry_var = tk.StringVar(value="1.00x")
+        self.speed_entry = ctk.CTkEntry(speed_frame, textvariable=self.speed_entry_var, font=ctk.CTkFont(size=12, weight="bold"), width=55, justify="center")
+        self.speed_entry.grid(row=0, column=2, padx=(10, 0))
+        self.speed_entry.bind("<Return>", self.on_speed_entry_change)
+        self.speed_entry.bind("<FocusOut>", self.on_speed_entry_change)
+
+        speed_btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+        speed_btn_frame.grid(row=3, column=0, padx=20, pady=(5, 10), sticky="ew")
+        speed_btn_frame.grid_columnconfigure((0,1,2,3,4,5), weight=1)
+
+        btn_style = {"fg_color": "#333", "hover_color": "#444"}
+        ctk.CTkButton(speed_btn_frame, text="-10%", command=lambda: self.change_speed(-0.10), **btn_style).grid(row=0, column=0, padx=2, sticky="ew")
+        ctk.CTkButton(speed_btn_frame, text="-5%", command=lambda: self.change_speed(-0.05), **btn_style).grid(row=0, column=1, padx=2, sticky="ew")
+        ctk.CTkButton(speed_btn_frame, text="-1%", command=lambda: self.change_speed(-0.01), **btn_style).grid(row=0, column=2, padx=2, sticky="ew")
+        ctk.CTkButton(speed_btn_frame, text="+1%", command=lambda: self.change_speed(0.01), **btn_style).grid(row=0, column=3, padx=2, sticky="ew")
+        ctk.CTkButton(speed_btn_frame, text="+5%", command=lambda: self.change_speed(0.05), **btn_style).grid(row=0, column=4, padx=2, sticky="ew")
+        ctk.CTkButton(speed_btn_frame, text="+10%", command=lambda: self.change_speed(0.10), **btn_style).grid(row=0, column=5, padx=2, sticky="ew")
 
         ctrl_frame = ctk.CTkFrame(card, fg_color="transparent")
-        ctrl_frame.grid(row=3, column=0, padx=20, pady=(10, 15), sticky="ew")
+        ctrl_frame.grid(row=4, column=0, padx=20, pady=(10, 15), sticky="ew")
         ctrl_frame.grid_columnconfigure((0,1,2), weight=1)
         
         self.btn_play = ctk.CTkButton(
@@ -433,8 +448,33 @@ class MidiKeyTranslatorApp(ctk.CTk):
         ctk.CTkButton(footer, text="☕ Donate", width=80, height=24, fg_color="#333", hover_color="#FF5E5B", font=ctk.CTkFont(size=11), command=lambda: webbrowser.open("https://ko-fi.com/unbutteredbagel")).pack(side="right", padx=20)
 
     def on_speed_change(self, value):
-        self.speed_label.configure(text=f"{value:.2f}x")
+        self.speed_entry_var.set(f"{value:.2f}x")
         self.sync_config()
+
+    def change_speed(self, delta):
+        current_speed = self.speed_modifier_var.get()
+        new_speed = round(current_speed + delta, 2)
+        
+        # Clamp the value within the slider's range
+        new_speed = max(0.25, min(new_speed, 4.0))
+        
+        self.speed_modifier_var.set(new_speed)
+        # Manually trigger update to fix potential UI lag and ensure sync
+        self.on_speed_change(new_speed)
+
+    def on_speed_entry_change(self, event=None):
+        try:
+            value_str = self.speed_entry_var.get().lower().replace('x', '')
+            new_speed = float(value_str)
+            
+            new_speed = max(0.25, min(new_speed, 4.0)) # Clamp
+            
+            self.speed_modifier_var.set(new_speed)
+            self.on_speed_change(new_speed) # Ensure update
+        except ValueError:
+            # Revert to current value on bad input
+            current_speed = self.speed_modifier_var.get()
+            self.speed_entry_var.set(f"{current_speed:.2f}x")
 
     def on_window_select(self, value):
         self.sync_config()
