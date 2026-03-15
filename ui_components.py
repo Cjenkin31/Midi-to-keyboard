@@ -12,6 +12,19 @@ except ImportError:
 from constants import *
 from utils import *
 
+KEYSYM_MAP = {
+    "comma": ",",
+    "period": ".",
+    "semicolon": ";",
+    "slash": "/",
+    "bracketleft": "[",
+    "bracketright": "]",
+    "minus": "-",
+    "equal": "=",
+    "apostrophe": "'",
+    "backslash": "\\",
+    "grave": "`",
+}
 
 class ProfileManager(ctk.CTkToplevel):
     def __init__(self, parent, profiles, load_callback, refresh_callback):
@@ -127,7 +140,7 @@ class SleekEditor(ctk.CTkToplevel):
     def __init__(self, parent, key_map, callback):
         super().__init__(parent)
         self.title("Keymap Editor")
-        self.geometry("400x600")
+        self.geometry("450x650")
         self.callback = callback
         self.attributes("-topmost", True)
         self.temp_map = copy.deepcopy(key_map)
@@ -156,12 +169,21 @@ class SleekEditor(ctk.CTkToplevel):
         self.populate()
         self.tree.bind("<Double-1>", self.on_click)
 
+        transpose_frame = ctk.CTkFrame(self, fg_color="transparent")
+        transpose_frame.grid(row=2, column=0, pady=(15, 0))
+        
+        ctk.CTkLabel(transpose_frame, text="Transpose All:").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(transpose_frame, text="-12 (Oct)", width=70, command=lambda: self.shift_all(-12)).pack(side="left", padx=2)
+        ctk.CTkButton(transpose_frame, text="-1", width=40, command=lambda: self.shift_all(-1)).pack(side="left", padx=2)
+        ctk.CTkButton(transpose_frame, text="+1", width=40, command=lambda: self.shift_all(1)).pack(side="left", padx=2)
+        ctk.CTkButton(transpose_frame, text="+12 (Oct)", width=70, command=lambda: self.shift_all(12)).pack(side="left", padx=2)
+
         action_frame = ctk.CTkFrame(self, fg_color="transparent")
-        action_frame.grid(row=2, column=0, pady=20)
+        action_frame.grid(row=3, column=0, pady=20)
 
         ctk.CTkButton(action_frame, text="Save Changes", command=self.save, fg_color=COLOR_LIVE_GO, hover_color="#238636").pack(side="left", padx=5)
         ctk.CTkButton(action_frame, text="Cancel", command=self.destroy, fg_color="transparent", border_width=1, text_color="#AAAAAA").pack(side="left", padx=5)
-        ctk.CTkButton(action_frame, text="Clear All", command=self.clear, fg_color="#333", hover_color=COLOR_DANGER).pack(side="left", padx=5)
+        ctk.CTkButton(action_frame, text="Clear All", command=self.clear, fg_color="#333", hover_color=COLOR_DANGER).pack(side="right", padx=5)
 
         self.grab_set()
 
@@ -183,6 +205,15 @@ class SleekEditor(ctk.CTkToplevel):
             if res: self.temp_map[note] = res[0] if len(res)==1 else res
             else: self.temp_map.pop(note, None)
             self.populate()
+
+    def shift_all(self, delta):
+        new_map = {}
+        for note, key in self.temp_map.items():
+            new_note = note + delta
+            if 21 <= new_note <= 108:
+                new_map[new_note] = key
+        self.temp_map = new_map
+        self.populate()
 
     def clear(self):
         if messagebox.askyesno("Confirm", "Clear all bindings?"):
@@ -215,6 +246,7 @@ class SleekKeyCapture(ctk.CTkToplevel):
 
     def on_key(self, event):
         k = event.keysym.lower()
+        k = KEYSYM_MAP.get(k, k)
         if k not in self.keys:
             self.keys.append(k)
             self.lbl.configure(text=" + ".join(self.keys))
